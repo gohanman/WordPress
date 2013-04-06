@@ -159,13 +159,11 @@ function get_the_guid( $id = 0 ) {
  * @since 0.71
  *
  * @param string $more_link_text Optional. Content for when there is more text.
- * @param bool $stripteaser Optional. Strip teaser content before the more text. Default is false.
+ * @param bool $strip_teaser Optional. Strip teaser content before the more text. Default is false.
  */
-function the_content($more_link_text = null, $stripteaser = false) {
-	$content = get_the_content($more_link_text, $stripteaser);
-	$content = apply_filters('the_content', $content);
-	$content = str_replace(']]>', ']]&gt;', $content);
-	echo $content;
+function the_content( $more_link_text = null, $strip_teaser = false ) {
+	$content = apply_filters( 'the_content', get_the_content( $more_link_text, $strip_teaser ) );
+	echo str_replace( ']]>', ']]&gt;', $content );
 }
 
 /**
@@ -177,7 +175,7 @@ function the_content($more_link_text = null, $stripteaser = false) {
  * @param bool $stripteaser Optional. Strip teaser content before the more text. Default is false.
  * @return string
  */
-function get_the_content( $more_link_text = null, $stripteaser = false ) {
+function get_the_content( $more_link_text = null, $strip_teaser = false ) {
 	global $more, $page, $pages, $multipage, $preview;
 
 	$post = get_post();
@@ -186,43 +184,49 @@ function get_the_content( $more_link_text = null, $stripteaser = false ) {
 		$more_link_text = __( '(more...)' );
 
 	$output = '';
-	$hasTeaser = false;
+	$has_teaser = false;
+	$matches = array();
 
 	// If post password required and it doesn't match the cookie.
 	if ( post_password_required() )
 		return get_the_password_form();
 
-	if ( $page > count($pages) ) // if the requested page doesn't exist
-		$page = count($pages); // give them the highest numbered page that DOES exist
+	if ( $page > count( $pages ) ) // if the requested page doesn't exist
+		$page = count( $pages ); // give them the highest numbered page that DOES exist
 
-	$content = $pages[$page-1];
-	if ( preg_match('/<!--more(.*?)?-->/', $content, $matches) ) {
-		$content = explode($matches[0], $content, 2);
-		if ( !empty($matches[1]) && !empty($more_link_text) )
-			$more_link_text = strip_tags(wp_kses_no_null(trim($matches[1])));
+	$content = $pages[$page - 1];
+	if ( preg_match( '/<!--more(.*?)?-->/', $content, $matches ) ) {
+		$content = explode( $matches[0], $content, 2 );
+		if ( ! empty( $matches[1] ) && ! empty( $more_link_text ) )
+			$more_link_text = strip_tags( wp_kses_no_null( trim( $matches[1] ) ) );
 
-		$hasTeaser = true;
+		$has_teaser = true;
 	} else {
-		$content = array($content);
+		$content = array( $content );
 	}
-	if ( (false !== strpos($post->post_content, '<!--noteaser-->') && ((!$multipage) || ($page==1))) )
-		$stripteaser = true;
+
+	if ( false !== strpos( $post->post_content, '<!--noteaser-->' ) && ( ! $multipage || $page == 1 ) )
+		$strip_teaser = true;
+
 	$teaser = $content[0];
-	if ( $more && $stripteaser && $hasTeaser )
+
+	if ( $more && $strip_teaser && $has_teaser )
 		$teaser = '';
+
 	$output .= $teaser;
-	if ( count($content) > 1 ) {
+
+	if ( count( $content ) > 1 ) {
 		if ( $more ) {
 			$output .= '<span id="more-' . $post->ID . '"></span>' . $content[1];
 		} else {
-			if ( ! empty($more_link_text) )
+			if ( ! empty( $more_link_text ) )
 				$output .= apply_filters( 'the_content_more_link', ' <a href="' . get_permalink() . "#more-{$post->ID}\" class=\"more-link\">$more_link_text</a>", $more_link_text );
-			$output = force_balance_tags($output);
+			$output = force_balance_tags( $output );
 		}
-
 	}
+
 	if ( $preview ) // preview fix for javascript bug with foreign languages
-		$output =	preg_replace_callback('/\%u([0-9A-F]{4})/', '_convert_urlencoded_to_entities', $output);
+		$output =	preg_replace_callback( '/\%u([0-9A-F]{4})/', '_convert_urlencoded_to_entities', $output );
 
 	return $output;
 }
@@ -1412,32 +1416,19 @@ function wp_list_post_revisions( $post_id = 0, $args = null ) {
 	$defaults = array( 'parent' => false, 'right' => false, 'left' => false, 'format' => 'list', 'type' => 'all' );
 	extract( wp_parse_args( $args, $defaults ), EXTR_SKIP );
 
-	switch ( $type ) {
-		case 'autosave' :
-			if ( !$autosave = wp_get_post_autosave( $post->ID ) )
-				return;
-			$revisions = array( $autosave );
-			break;
-		case 'revision' : // just revisions - remove autosave later
-		case 'all' :
-		default :
-			if ( !$revisions = wp_get_post_revisions( $post->ID ) )
-				return;
-			break;
-	}
+	if ( !$revisions = wp_get_post_revisions( $post->ID ) )
+		return;
 
 	/* translators: post revision: 1: when, 2: author name */
 	$titlef = _x( '%1$s', 'post revision' );
 
-	if ( $parent )
+	// Since 3.6 revisions include a copy of the current post data as a revision.
+	// The following removes that revision when $parent == false
+	$parent_included = _wp_get_post_revision_version( reset( $revisions ) ) > 0;
+	if ( $parent_included && ! $parent )
+		array_shift( $revisions );
+	elseif ( ! $parent_included && $parent )
 		array_unshift( $revisions, $post );
-
-	// since 3.6 revisions include a copy of the current post data as a revision
-	// the collowing removes this current revision if present from the list of
-	// revisions returned by wp_list_post_revisions, remove these to include the
-	// crrent post revision in the list of revisions
-	if ( wp_first_revision_matches_current_version( $post_id ) )
-		array_pop( $revisions );
 
 	$rows = $right_checked = '';
 	$class = false;
@@ -1445,7 +1436,9 @@ function wp_list_post_revisions( $post_id = 0, $args = null ) {
 	foreach ( $revisions as $revision ) {
 		if ( !current_user_can( 'read_post', $revision->ID ) )
 			continue;
-		if ( 'revision' === $type && wp_is_post_autosave( $revision ) )
+
+		$is_autosave = wp_is_post_autosave( $revision );
+		if ( ( 'revision' === $type && $is_autosave ) || ( 'autosave' === $type && ! $is_autosave ) )
 			continue;
 
 		$date = wp_post_revision_title_expanded( $revision );
@@ -1525,5 +1518,4 @@ function wp_list_post_revisions( $post_id = 0, $args = null ) {
 		}
 
 	endif;
-
 }

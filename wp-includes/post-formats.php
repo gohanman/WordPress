@@ -84,7 +84,10 @@ function get_post_format_meta( $post_id = 0 ) {
 		'quote'        => '',
 		'quote_source' => '',
 		'url'          => '',
-		'media'        => '',
+		'image'        => '',
+		'gallery'      => '',
+		'audio'        => '',
+		'video'        => '',
 	);
 
 	foreach ( $values as $key => $value )
@@ -286,7 +289,7 @@ function post_formats_compat( $content, $id = 0 ) {
 		return $content;
 
 	$format = get_post_format( $post );
-	if ( empty( $format ) || in_array( $format, array( 'status', 'aside', 'chat' ) ) )
+	if ( empty( $format ) || in_array( $format, array( 'status', 'aside', 'chat', 'gallery' ) ) )
 		return $content;
 
 	if ( current_theme_supports( 'structured-post-formats', $format ) )
@@ -305,8 +308,6 @@ function post_formats_compat( $content, $id = 0 ) {
 	$show_content = true;
 	$format_output = '';
 	$meta = get_post_format_meta( $post->ID );
-	// passed by ref in preg_match()
-	$matches = array();
 
 	switch ( $format ) {
 		case 'link':
@@ -333,34 +334,58 @@ function post_formats_compat( $content, $id = 0 ) {
 					'<a %shref="%s">%s</a>',
 					empty( $compat['link_class'] ) ? '' : sprintf( 'class="%s" ', esc_attr( $compat['link_class'] ) ),
 					esc_url( $url ),
-					empty( $post->post_title ) ? esc_url( $meta['url'] ) : apply_filters( 'the_title', $post->post_title )
+					empty( $post->post_title ) ? esc_url( $meta['url'] ) : apply_filters( 'the_title', $post->post_title, $post->ID )
 				);
  			}
 			break;
 
+		case 'image':
+			if ( ! empty( $meta['image'] ) ) {
+				$image = is_numeric( $meta['image'] ) ? wp_get_attachment_url( $meta['image'] ) : $meta['image'];
+
+				if ( ! empty( $image ) && ! stristr( $content, $image ) ) {
+					$image_html = sprintf(
+						'<img %ssrc="%s" alt="" />',
+						empty( $compat['image_class'] ) ? '' : sprintf( 'class="%s" ', esc_attr( $compat['image_class'] ) ),
+						$image
+					);
+					if ( empty( $meta['url'] ) ) {
+						$format_output .= $image_html;
+					} else {
+						$format_output .= sprintf(
+							'<a href="%s">%s</a>',
+							esc_url( $meta['url'] ),
+							$image_html
+						);
+					}
+				}
+			}
+			break;
+
 		case 'quote':
 			if ( ! empty( $meta['quote'] ) && ! stristr( $content, $meta['quote'] ) ) {
-				$format_output .= sprintf( '<blockquote>%s</blockquote>', $meta['quote'] );
+				$quote = sprintf( '<blockquote>%s</blockquote>', wpautop( $meta['quote'] ) );
 				if ( ! empty( $meta['quote_source'] ) ) {
-					$format_output .= sprintf(
-						'<cite>%s</cite>',
-						! empty( $meta['url'] ) ?
-							sprintf( '<a href="%s">%s</a>', esc_url( $meta['url'] ), $meta['quote_source'] ) :
-							$meta['quote_source']
-					);
+					$source = ( empty( $meta['url'] ) ) ? $meta['quote_source'] : sprintf( '<a href="%s">%s</a>', esc_url( $meta['url'] ), $meta['quote_source'] );
+					$quote .= sprintf( '<figcaption class="quote-caption">%s</figcaption>', $source );
 				}
+				$format_output .= sprintf( '<figure class="quote">%s</figure>', $quote );
 			}
 			break;
 
 		case 'video':
 		case 'audio':
-			if ( ! has_shortcode( $post->post_content, $format ) && ! empty( $meta['media'] ) ) {
+			if ( ! has_shortcode( $post->post_content, $format ) && ! empty( $meta[$format] ) ) {
+				// the metadata is an attachment ID
+				if ( is_numeric( $meta[$format] ) ) {
+					$url = wp_get_attachment_url( $meta[$format] );
+					$format_output .= sprintf( '[%s src="%s"]', $format, $url );
 				// the metadata is a shortcode or an embed code
-				if ( preg_match( '/' . get_shortcode_regex() . '/s', $meta['media'] ) || preg_match( '#<[^>]+>#', $meta['media'] ) ) {
-					$format_output .= $meta['media'];
-				} elseif ( ! stristr( $content, $meta['media'] ) ) {
+				} elseif ( preg_match( '/' . get_shortcode_regex() . '/s', $meta[$format] ) || preg_match( '#<[^>]+>#', $meta[$format] ) ) {
+					$format_output .= $meta[$format];
+				} elseif ( ! stristr( $content, $meta[$format] ) ) {
 					// attempt to embed the URL
-					$format_output .= sprintf( '[embed]%s[/embed]', $meta['media'] );
+					$format_output .= sprintf( '[embed]%s[/embed]', $meta[$format] );
 				}
 			}
 			break;
@@ -389,6 +414,213 @@ function post_formats_compat( $content, $id = 0 ) {
 		$output .= "\n\n" . $content;
 
 	return $output;
+}
+
+/**
+ * Add chat detection support to the `get_content_chat()` chat parser.
+ *
+ * @since 3.6.0
+ *
+ * @global array $_wp_chat_parsers
+ * @param string $name Unique identifier for chat format. Example: IRC
+ * @param string $newline_regex RegEx to match the start of a new line, typically when a new "username:" appears
+ *	The parser will handle up to 3 matched expressions
+ *	$matches[0] = the string before the user's message starts
+ *	$matches[1] = the time of the message, if present
+ *	$matches[2] = the author/username
+ *	OR
+ *	$matches[0] = the string before the user's message starts
+ *	$matches[1] = the author/username
+ * @param string $delimiter_regex RegEx to determine where to split the username syntax from the chat message
+ */
+function add_chat_detection_format( $name, $newline_regex, $delimiter_regex ) {
+	global $_wp_chat_parsers;
+
+	if ( empty( $_wp_chat_parsers ) )
+		$_wp_chat_parsers = array();
+
+	$_wp_chat_parsers = array( $name => array( $newline_regex, $delimiter_regex ) ) + $_wp_chat_parsers;
+}
+add_chat_detection_format( 'IM', '#^([^:]+):#', '#[:]#' );
+add_chat_detection_format( 'Skype', '#^(\[.+?\])\s([^:]+):#', '#[:]#' );
+
+/**
+ * Deliberately interpret passed content as a chat transcript that is optionally
+ * followed by commentary
+ *
+ * If the content does not contain username syntax, assume that it does not contain
+ * chat logs and return
+ *
+ * @since 3.6.0
+ *
+ * Example:
+ *
+ * One stanza of chat:
+ * Scott: Hey, let's chat!
+ * Helen: No.
+ *
+ * $stanzas = array(
+ *     array(
+ *         array(
+ *             'time' => '',
+ *             'author' => 'Scott',
+ *             'messsage' => "Hey, let's chat!"
+ *         ),
+ *         array(
+ *             'time' => '',
+ *             'author' => 'Helen',
+ *             'message' => 'No.'
+ *         )
+ *     )
+ * )
+ * @param string $content A string which might contain chat data.
+ * @param boolean $remove Whether to remove the found data from the passed content.
+ * @return array A chat log as structured data
+ */
+function get_content_chat( &$content, $remove = false ) {
+	global $_wp_chat_parsers;
+
+	$trimmed = trim( $content );
+	if ( empty( $trimmed ) )
+		return array();
+
+	$matched_parser = false;
+	foreach ( $_wp_chat_parsers as $parser ) {
+		@list( $newline_regex, $delimiter_regex ) = $parser;
+		if ( preg_match( $newline_regex, $trimmed ) ) {
+			$matched_parser = $parser;
+			break;
+		}
+	}
+
+	if ( false === $matched_parser )
+		return array();
+
+	$last_index = 0;
+	$stanzas = $data = $stanza = array();
+	$author = $time = '';
+	$lines = explode( "\n", make_clickable( $trimmed ) );
+
+
+	foreach ( $lines as $index => $line ) {
+		$line = trim( $line );
+
+		if ( empty( $line ) ) {
+			if ( ! empty( $author ) ) {
+				$stanza[] = array(
+					'time'    => $time,
+					'author'  => $author,
+					'message' => join( ' ', $data )
+				);
+			}
+
+			$stanzas[] = $stanza;
+			$last_index = $index;
+			$stanza = $data = array();
+			$author = $time = '';
+			if ( ! empty( $lines[$index + 1] ) && ! preg_match( $delimiter_regex, $lines[$index + 1] ) )
+				break;
+			else
+				continue;
+		}
+
+		$matches = array();
+		$matched = preg_match( $newline_regex, $line, $matches );
+		$author_match = empty( $matches[2] ) ? $matches[1] : $matches[2];
+		// assume username syntax if no whitespace is present
+		$no_ws = $matched && ! preg_match( '#[\r\n\t ]#', $author_match );
+		// allow script-like stanzas
+		$has_ws = $matched && preg_match( '#[\r\n\t ]#', $author_match ) && empty( $lines[$index + 1] ) && empty( $lines[$index - 1] );
+		if ( $matched && ( ! empty( $matches[2] ) || ( $no_ws || $has_ws ) ) ) {
+			if ( ! empty( $author ) ) {
+				$stanza[] = array(
+					'time'    => $time,
+					'author'  => $author,
+					'message' => join( ' ', $data )
+				);
+				$data = array();
+			}
+
+			$time = empty( $matches[2] ) ? '' : $matches[1];
+			$author = $author_match;
+			$data[] = trim( str_replace( $matches[0], '', $line ) );
+		} elseif ( preg_match( '#\S#', $line ) ) {
+			$data[] = $line;
+		}
+	}
+
+	if ( ! empty( $author ) ) {
+		$stanza[] = array(
+			'time'    => $time,
+			'author'  => $author,
+			'message' => trim( join( ' ', $data ) )
+		);
+	}
+
+	if ( ! empty( $stanza ) )
+		$stanzas[] = $stanza;
+
+	if ( $remove )
+		$content = trim( join( "\n", array_slice( $lines, $last_index ) ) );
+
+	return $stanzas;
+}
+
+/**
+ * Retrieve structured chat data from the current or passed post
+ *
+ * @since 3.6.0
+ *
+ * @param int $id Optional. Post ID
+ * @return array
+ */
+function get_the_post_format_chat( $id = 0 ) {
+	$post = empty( $id ) ? clone get_post() : get_post( $id );
+	if ( empty( $post ) )
+		return array();
+
+	$data = get_content_chat( get_paged_content( $post->post_content ) );
+	if ( empty( $data ) )
+		return array();
+
+	return $data;
+}
+
+/**
+ * Output HTML for a given chat's structured data. Themes can use this as a
+ * template tag in place of the_content() for Chat post format templates.
+ *
+ * @since 3.6.0
+ *
+ * @uses get_the_post_format_chat()
+ *
+ * @print HTML
+ */
+function the_post_format_chat() {
+	$output  = '<dl class="chat">';
+	$stanzas = get_the_post_format_chat();
+
+	foreach ( $stanzas as $stanza ) {
+		foreach ( $stanza as $row ) {
+			$time = '';
+			if ( ! empty( $row['time'] ) )
+				$time = sprintf( '<time class="chat-timestamp">%s</time>', esc_html( $row['time'] ) );
+
+			$output .= sprintf(
+				'<dt class="chat-author chat-author-%1$s vcard">%2$s <cite class="fn">%3$s</cite>: </dt>
+					<dd class="chat-text">%4$s</dd>
+				',
+				esc_attr( sanitize_title_with_dashes( $row['author'] ) ), // Slug.
+				$time,
+				esc_html( $row['author'] ),
+				$row['message']
+			);
+		}
+	}
+
+	$output .= '</dl><!-- .chat -->';
+
+	echo $output;
 }
 
 /**
@@ -441,7 +673,7 @@ function get_content_url( &$content, $remove = false ) {
  * @param int $id Optional. Post ID.
  * @return string A URL, if found.
  */
-function get_the_url( $id = 0 ) {
+function get_the_post_format_url( $id = 0 ) {
 	$post = empty( $id ) ? get_post() : get_post( $id );
 	if ( empty( $post ) )
 		return '';
@@ -449,11 +681,11 @@ function get_the_url( $id = 0 ) {
 	if ( in_array( get_post_format( $post->ID ), array( 'link', 'quote' ) ) ) {
 		$meta = get_post_format_meta( $post->ID );
 		if ( ! empty( $meta['url'] ) )
-			return apply_filters( 'get_the_url', esc_url_raw( $meta['url'] ), $post );
+			return apply_filters( 'get_the_post_format_url', esc_url_raw( $meta['url'] ), $post );
 	}
 
 	if ( ! empty( $post->post_content ) )
-		return apply_filters( 'get_the_url', get_content_url( $post->post_content ), $post );
+		return apply_filters( 'get_the_post_format_url', get_content_url( $post->post_content ), $post );
 }
 
 /**
@@ -462,6 +694,92 @@ function get_the_url( $id = 0 ) {
  * @since 3.6.0
  *.
  */
-function the_url() {
-	echo esc_url( get_the_url() );
+function the_post_format_url() {
+	echo esc_url( get_the_post_format_url() );
+}
+
+/**
+ * Retrieve the post content, minus the extracted post format content
+ *
+ * @since 3.6.0
+ *
+ * @internal there is a lot of code that could be abstracted from get_the_content()
+ *
+ * @param string $more_link_text Optional. Content for when there is more text.
+ * @param bool $strip_teaser Optional. Strip teaser content before the more text. Default is false.
+ * @return string
+ */
+function get_the_remaining_content( $more_link_text = null, $strip_teaser = false ) {
+	global $more, $page, $format_pages, $multipage, $preview;
+
+	$post = get_post();
+
+	if ( null === $more_link_text )
+		$more_link_text = __( '(more...)' );
+
+	$output = '';
+	$has_teaser = false;
+	$matches = array();
+
+	// If post password required and it doesn't match the cookie.
+	if ( post_password_required() )
+		return get_the_password_form();
+
+	if ( $page > count( $format_pages ) ) // if the requested page doesn't exist
+		$page = count( $format_pages ); // give them the highest numbered page that DOES exist
+
+	$content = $format_pages[$page-1];
+	if ( preg_match( '/<!--more(.*?)?-->/', $content, $matches ) ) {
+		$content = explode( $matches[0], $content, 2 );
+		if ( ! empty( $matches[1] ) && ! empty( $more_link_text ) )
+			$more_link_text = strip_tags( wp_kses_no_null( trim( $matches[1] ) ) );
+
+		$has_teaser = true;
+	} else {
+		$content = array( $content );
+	}
+
+	if ( false !== strpos( $post->post_content, '<!--noteaser-->' ) && ( ! $multipage || $page == 1 ) )
+		$strip_teaser = true;
+
+	$teaser = $content[0];
+
+	if ( $more && $strip_teaser && $has_teaser )
+		$teaser = '';
+
+	$output .= $teaser;
+
+	if ( count( $content ) > 1 ) {
+		if ( $more ) {
+			$output .= '<span id="more-' . $post->ID . '"></span>' . $content[1];
+		} else {
+			if ( ! empty( $more_link_text ) )
+				$output .= apply_filters( 'the_content_more_link', ' <a href="' . get_permalink() . "#more-{$post->ID}\" class=\"more-link\">$more_link_text</a>", $more_link_text );
+
+			$output = force_balance_tags( $output );
+		}
+	}
+
+	if ( $preview ) // preview fix for javascript bug with foreign languages
+		$output = preg_replace_callback( '/\%u([0-9A-F]{4})/', '_convert_urlencoded_to_entities', $output );
+
+	return $output;
+}
+
+/**
+ * Display the post content minus the parsed post format data.
+ *
+ * @since 3.6.0
+ *
+ * @param string $more_link_text Optional. Content for when there is more text.
+ * @param bool $strip_teaser Optional. Strip teaser content before the more text. Default is false.
+ */
+function the_remaining_content( $more_link_text = null, $strip_teaser = false ) {
+	$extra = get_the_remaining_content( $more_link_text, $strip_teaser );
+
+	remove_filter( 'the_content', 'post_formats_compat', 7 );
+	$content = apply_filters( 'the_content', $extra );
+	add_filter( 'the_content', 'post_formats_compat', 7 );
+
+	echo str_replace( ']]>', ']]&gt;', $content );
 }

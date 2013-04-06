@@ -141,17 +141,21 @@ function get_template_part( $slug, $name = null ) {
  * form into the sidebar and also by the search widget in WordPress.
  *
  * There is also an action that is called whenever the function is run called,
- * 'get_search_form'. This can be useful for outputting JavaScript that the
+ * 'pre_get_search_form'. This can be useful for outputting JavaScript that the
  * search relies on or various formatting that applies to the beginning of the
  * search. To give a few examples of what it can be used for.
  *
  * @since 2.7.0
+ * @uses apply_filters() Calls 'search_form_format' filter to determine which type to use for the search field.
+ *  If set to 'html5', it changes to search input type and adds placeholder text.
+ *
  * @param boolean $echo Default to echo and not return the form.
- * @param string $format Which type to use for the search field. If set to 'html5' it changes to search input type and adds placeholder text.
  * @return string|null String when retrieving, null when displaying or if searchform.php exists.
  */
-function get_search_form( $echo = true, $format = 'xhtml' ) {
-	do_action( 'get_search_form' );
+function get_search_form( $echo = true ) {
+	do_action( 'pre_get_search_form' );
+
+	$format = apply_filters( 'search_form_format', 'xhtml' );
 
 	$search_form_template = locate_template( 'searchform.php' );
 	if ( '' != $search_form_template ) {
@@ -159,22 +163,32 @@ function get_search_form( $echo = true, $format = 'xhtml' ) {
 		require( $search_form_template );
 		$form = ob_get_clean();
 	} else {
-		$type        = ( 'html5' === $format ) ? 'search' : 'text';
-		$placeholder = ( 'html5' === $format ) ? 'placeholder="' . esc_attr_x( 'Search &hellip;', 'placeholder' ) . '" ' : '';
-
-		$form = '<form role="search" method="get" id="searchform" class="searchform" action="' . esc_url( home_url( '/' ) ) . '">
-			<div>
-				<label class="screen-reader-text" for="s">' . _x( 'Search for:', 'label' ) . '</label>
-				<input type="' . $type . '" ' . $placeholder . 'value="' . get_search_query() . '" name="s" id="s" />
-				<input type="submit" id="searchsubmit" value="'. esc_attr_x( 'Search', 'submit button' ) .'" />
-			</div>
-		</form>';
+		if ( 'html5' == $format ) {
+			$form = '<form role="search" method="get" class="searchform" action="' . esc_url( home_url( '/' ) ) . '">
+				<label><span class="screen-reader-text">' . _x( 'Search for:', 'label' ) . '</span>
+					<input type="search" placeholder="' . esc_attr_x( 'Search &hellip;', 'placeholder' ) . '" value="' . get_search_query() . '" name="s" title="' . _x( 'Search for:', 'label' ) . '" />
+				</label>
+				<input type="submit" class="searchsubmit" value="'. esc_attr_x( 'Search', 'submit button' ) .'" />
+			</form>';
+		} else {
+			$form = '<form role="search" method="get" id="searchform" class="searchform" action="' . esc_url( home_url( '/' ) ) . '">
+				<div>
+					<label class="screen-reader-text" for="s">' . _x( 'Search for:', 'label' ) . '</label>
+					<input type="text" value="' . get_search_query() . '" name="s" id="s" />
+					<input type="submit" id="searchsubmit" value="'. esc_attr_x( 'Search', 'submit button' ) .'" />
+				</div>
+			</form>';
+		}
 	}
 
+	$result = apply_filters( 'get_search_form', $form );
+	if ( null === $result )
+		$result = $form;
+
 	if ( $echo )
-		echo apply_filters( 'get_search_form', $form );
+		echo $result;
 	else
-		return apply_filters( 'get_search_form', $form );
+		return $result;
 }
 
 /**
@@ -2308,6 +2322,9 @@ function __checked_selected_helper( $helper, $current, $echo, $type ) {
  * @return array $settings
  */
 function wp_heartbeat_settings( $settings ) {
+	if ( ! is_admin() )
+		$settings['ajaxurl'] = admin_url( 'admin-ajax.php', 'relative' );
+
 	if ( is_user_logged_in() )
 		$settings['nonce'] = wp_create_nonce( 'heartbeat-nonce' );
 

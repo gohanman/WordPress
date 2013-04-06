@@ -69,9 +69,15 @@ function twentythirteen_setup() {
 	/*
 	 * This theme supports all available post formats.
 	 * See http://codex.wordpress.org/Post_Formats
+	 *
+	 * Structured post formats are formats where Twenty Thirteen handles the
+	 * output instead of the default core HTML output.
 	 */
 	add_theme_support( 'structured-post-formats', array(
-		'aside', 'audio', 'chat', 'gallery', 'image', 'link', 'quote', 'status', 'video'
+		'link', 'video'
+	) );
+	add_theme_support( 'post-formats', array(
+		'aside', 'audio', 'chat', 'gallery', 'image', 'quote', 'status'
 	) );
 
 	/*
@@ -93,6 +99,9 @@ function twentythirteen_setup() {
 	 */
 	add_theme_support( 'post-thumbnails' );
 	set_post_thumbnail_size( 604, 270, true );
+
+	// Register custom image size for image post formats.
+	add_image_size( 'twentythirteen-image-post', 724, 1288 );
 
 	// This theme uses its own gallery styles.
 	add_filter( 'use_default_gallery_style', '__return_false' );
@@ -431,7 +440,7 @@ endif;
  * @return string URL
  */
 function twentythirteen_get_link_url() {
-	$has_url = get_the_url();
+	$has_url = get_the_post_format_url();
 
 	return ( $has_url ) ? $has_url : apply_filters( 'the_permalink', get_permalink() );
 }
@@ -521,7 +530,7 @@ add_filter( 'comment_class', 'twentythirteen_comment_class' );
  * @since Twenty Thirteen 1.0
  */
 function twentythirteen_content_width() {
-	if ( has_post_format( 'image' ) || has_post_format( 'video' ) || is_attachment() ) {
+	if ( has_post_format( 'video' ) || is_attachment() ) {
 		global $content_width;
 		$content_width = 724;
 	}
@@ -544,6 +553,17 @@ function twentythirteen_aside_date( $content ) {
 	return $content;
 }
 add_filter( 'the_content', 'twentythirteen_aside_date', 8 ); // After embeds, before everything else.
+
+/**
+ * Switches default core markup for search form to output valid HTML5.
+ *
+ * @param string $format Expected markup format, default is `xhtml`
+ * @return string Twenty Thirteen loves HTML5.
+ */
+function twentythirteen_searchform_format( $format ) {
+	return 'html5';
+}
+add_filter( 'search_form_format', 'twentythirteen_searchform_format' );
 
 /**
  * Add postMessage support for site title and description for the Customizer.
@@ -575,3 +595,9 @@ add_action( 'customize_preview_init', 'twentythirteen_customize_preview_js' );
  * Adds support for a custom header image.
  */
 require( get_template_directory() . '/inc/custom-header.php' );
+
+/**
+ * Adds back compat handling for WP versions pre-3.6.
+ */
+if ( version_compare( $GLOBALS['wp_version'], '3.6-alpha', '<' ) )
+	require( get_template_directory() . '/inc/back-compat.php' );
