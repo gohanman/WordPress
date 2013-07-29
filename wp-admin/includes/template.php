@@ -34,7 +34,7 @@ class Walker_Category_Checklist extends Walker {
 		$output .= "$indent</ul>\n";
 	}
 
-	function start_el( &$output, $category, $depth, $args, $id = 0 ) {
+	function start_el( &$output, $category, $depth = 0, $args = array(), $id = 0 ) {
 		extract($args);
 		if ( empty($taxonomy) )
 			$taxonomy = 'category';
@@ -240,7 +240,7 @@ function wp_link_category_checklist( $link_id = 0 ) {
  */
 function get_inline_data($post) {
 	$post_type_object = get_post_type_object($post->post_type);
-	if ( ! current_user_can($post_type_object->cap->edit_post, $post->ID) )
+	if ( ! current_user_can( 'edit_post', $post->ID ) )
 		return;
 
 	$title = esc_textarea( trim( $post->post_title ) );
@@ -345,7 +345,7 @@ function wp_comment_reply($position = '1', $checkbox = false, $mode = 'single', 
 
 	<div id="replycontainer">
 	<?php
-	$quicktags_settings = array( 'buttons' => 'strong,em,link,block,del,ins,img,ul,ol,li,code,spell,close' );
+	$quicktags_settings = array( 'buttons' => 'strong,em,link,block,del,ins,img,ul,ol,li,code,close' );
 	wp_editor( '', 'replycontent', array( 'media_buttons' => false, 'tinymce' => false, 'quicktags' => $quicktags_settings ) );
 	?>
 	</div>
@@ -619,8 +619,8 @@ function touch_time( $edit = 1, $for_post = 1, $tab_index = 0, $multi = 0 ) {
 	$minute = '<input type="text" ' . ( $multi ? '' : 'id="mn" ' ) . 'name="mn" value="' . $mn . '" size="2" maxlength="2"' . $tab_index_attribute . ' autocomplete="off" />';
 
 	echo '<div class="timestamp-wrap">';
-	/* translators: 1: month input, 2: day input, 3: year input, 4: hour input, 5: minute input */
-	printf(__('%1$s%2$s, %3$s @ %4$s : %5$s'), $month, $day, $year, $hour, $minute);
+	/* translators: 1: month, 2: day, 3: year, 4: hour, 5: minute */
+	printf( __( '%1$s %2$s, %3$s @ %4$s : %5$s' ), $month, $day, $year, $hour, $minute );
 
 	echo '</div><input type="hidden" id="ss" name="ss" value="' . $ss . '" />';
 
@@ -985,6 +985,8 @@ function remove_meta_box($id, $screen, $context) {
 function do_accordion_sections( $screen, $context, $object ) {
 	global $wp_meta_boxes;
 
+	wp_enqueue_script( 'accordion' );
+
 	if ( empty( $screen ) )
 		$screen = get_current_screen();
 	elseif ( is_string( $screen ) )
@@ -998,19 +1000,26 @@ function do_accordion_sections( $screen, $context, $object ) {
 		<ul class="outer-border">
 	<?php
 	$i = 0;
+	$first_open = false;
 	do {
 		if ( ! isset( $wp_meta_boxes ) || ! isset( $wp_meta_boxes[$page] ) || ! isset( $wp_meta_boxes[$page][$context] ) )
 			break;
 
-		foreach ( array( 'high', 'sorted', 'core', 'default', 'low' ) as $priority ) {
+		foreach ( array( 'high', 'core', 'default', 'low' ) as $priority ) {
 			if ( isset( $wp_meta_boxes[$page][$context][$priority] ) ) {
 				foreach ( $wp_meta_boxes[$page][$context][$priority] as $box ) {
 					if ( false == $box || ! $box['title'] )
 						continue;
 					$i++;
 					$hidden_class = in_array( $box['id'], $hidden ) ? 'hide-if-js' : '';
+
+					$open_class = '';
+					if ( ! $first_open && empty( $hidden_class ) ) {
+						$first_open = true;
+						$open_class = 'open';
+					}
 					?>
-					<li class="control-section accordion-section <?php echo $hidden_class; ?> <?php echo esc_attr( $box['id'] ); ?>" id="<?php echo esc_attr( $box['id'] ); ?>">
+					<li class="control-section accordion-section <?php echo $hidden_class; ?> <?php echo $open_class; ?> <?php echo esc_attr( $box['id'] ); ?>" id="<?php echo esc_attr( $box['id'] ); ?>">
 						<h3 class="accordion-section-title hndle" tabindex="0" title="<?php echo esc_attr( $box['title'] ); ?>"><?php echo esc_html( $box['title'] ); ?></h3>
 						<div class="accordion-section-content <?php postbox_classes( $box['id'], $page ); ?>">
 							<div class="inside">
@@ -1425,12 +1434,7 @@ wp_enqueue_style( 'colors' );
 //<![CDATA[
 addLoadEvent = function(func){if(typeof jQuery!="undefined")jQuery(document).ready(func);else if(typeof wpOnload!='function'){wpOnload=func;}else{var oldonload=wpOnload;wpOnload=function(){oldonload();func();}}};
 function tb_close(){var win=window.dialogArguments||opener||parent||top;win.tb_remove();}
-var userSettings = {
-		'url': '<?php echo SITECOOKIEPATH; ?>',
-		'uid': '<?php if ( ! isset($current_user) ) $current_user = wp_get_current_user(); echo $current_user->ID; ?>',
-		'time':'<?php echo time() ?>'
-	},
-	ajaxurl = '<?php echo admin_url( 'admin-ajax.php', 'relative' ); ?>',
+var ajaxurl = '<?php echo admin_url( 'admin-ajax.php', 'relative' ); ?>',
 	pagenow = '<?php echo $current_screen->id; ?>',
 	typenow = '<?php echo $current_screen->post_type; ?>',
 	adminpage = '<?php echo $admin_body_class; ?>',
@@ -1502,7 +1506,7 @@ function _post_states($post) {
 	if ( is_sticky($post->ID) )
 		$post_states['sticky'] = __('Sticky');
 
-	$post_states = apply_filters( 'display_post_states', $post_states );
+	$post_states = apply_filters( 'display_post_states', $post_states, $post );
 
 	if ( ! empty($post_states) ) {
 		$state_count = count($post_states);
@@ -1924,4 +1928,25 @@ function convert_to_screen( $hook_name ) {
 	}
 
 	return WP_Screen::get( $hook_name );
+}
+
+/**
+ * Output the HTML for restoring the post data from DOM storage
+ *
+ * @since 3.6
+ * @access private
+ */
+function _local_storage_notice() {
+	?>
+	<div id="local-storage-notice" class="hidden">
+	<p class="local-restore">
+		<?php _e('The backup of this post in your browser is different from the version below.'); ?>
+		<a class="restore-backup" href="#"><?php _e('Restore the backup.'); ?></a>
+	</p>
+	<p class="undo-restore hidden">
+		<?php _e('Post restored successfully.'); ?>
+		<a class="undo-restore-backup" href="#"><?php _e('Undo.'); ?></a>
+	</p>
+	</div>
+	<?php
 }

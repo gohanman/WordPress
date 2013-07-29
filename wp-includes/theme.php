@@ -340,7 +340,7 @@ function search_theme_directories( $force = false ) {
 
 	// Set up maybe-relative, maybe-absolute array of theme directories.
 	// We always want to return absolute, but we need to cache relative
-	// use in for get_theme_root().
+	// to use in get_theme_root().
 	foreach ( $wp_theme_directories as $theme_root ) {
 		if ( 0 === strpos( $theme_root, WP_CONTENT_DIR ) )
 			$relative_theme_roots[ str_replace( WP_CONTENT_DIR, '', $theme_root ) ] = $theme_root;
@@ -544,7 +544,7 @@ function locale_stylesheet() {
 /**
  * Start preview theme output buffer.
  *
- * Will only preform task if the user has permissions and template and preview
+ * Will only perform task if the user has permissions and template and preview
  * query variables exist.
  *
  * @since 2.6.0
@@ -1259,16 +1259,8 @@ function add_theme_support( $feature ) {
 		$args = array_slice( func_get_args(), 1 );
 
 	switch ( $feature ) {
-		case 'structured-post-formats' :
-			if ( is_array( $args[0] ) )
-				$args[0] = array_intersect( $args[0], array_keys( get_post_format_slugs() ) );
-			// structured-post-formats support automatically adds support for post-formats.
-			$_wp_theme_features['post-formats'] = $args;
 		case 'post-formats' :
-			// An existing structured-post-formats support declaration overrides post-formats.
-			if ( current_theme_supports( 'structured-post-formats' ) )
-				$args = get_theme_support( 'structured-post-formats' );
-			elseif ( is_array( $args[0] ) )
+			if ( is_array( $args[0] ) )
 				$args[0] = array_intersect( $args[0], array_keys( get_post_format_slugs() ) );
 			break;
 
@@ -1555,7 +1547,6 @@ function current_theme_supports( $feature ) {
 			return in_array( $content_type, $_wp_theme_features[$feature][0] );
 			break;
 
-		case 'structured-post-formats':
 		case 'post-formats':
 			// specific post formats can be registered by passing an array of types to
 			// add_theme_support()

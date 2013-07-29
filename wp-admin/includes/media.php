@@ -224,8 +224,60 @@ function media_handle_upload($file_id, $post_id, $post_data = array(), $override
 	$title = $name;
 	$content = '';
 
+	if ( preg_match( '#^audio#', $type ) ) {
+		$meta = wp_read_audio_metadata( $file );
+
+		if ( ! empty( $meta['title'] ) )
+			$title = $meta['title'];
+
+		$content = '';
+
+		if ( ! empty( $title ) ) {
+
+			if ( ! empty( $meta['album'] ) && ! empty( $meta['artist'] ) ) {
+				/* translators: 1: audio track title, 2: album title, 3: artist name */
+				$content .= sprintf( __( '"%1$s" from %2$s by %3$s.' ), $title, $meta['album'], $meta['artist'] );
+			} else if ( ! empty( $meta['album'] ) ) {
+				/* translators: 1: audio track title, 2: album title */
+				$content .= sprintf( __( '"%1$s" from %2$s.' ), $title, $meta['album'] );
+			} else if ( ! empty( $meta['artist'] ) ) {
+				/* translators: 1: audio track title, 2: artist name */
+				$content .= sprintf( __( '"%1$s" by %2$s.' ), $title, $meta['artist'] );
+			} else {
+				$content .= sprintf( __( '"%s".' ), $title );
+			}
+
+		} else if ( ! empty( $meta['album'] ) ) {
+
+			if ( ! empty( $meta['artist'] ) ) {
+				/* translators: 1: audio album title, 2: artist name */
+				$content .= sprintf( __( '%1$s by %2$s.' ), $meta['album'], $meta['artist'] );
+			} else {
+				$content .= $meta['album'] . '.';
+			}
+
+		} else if ( ! empty( $meta['artist'] ) ) {
+
+			$content .= $meta['artist'] . '.';
+
+		}
+
+		if ( ! empty( $meta['year'] ) )
+			$content .= ' ' . sprintf( __( 'Released: %d.' ), $meta['year'] );
+
+		if ( ! empty( $meta['track_number'] ) ) {
+			$track_number = explode( '/', $meta['track_number'] );
+			if ( isset( $track_number[1] ) )
+				$content .= ' ' . sprintf( __( 'Track %1$s of %2$s.' ), number_format_i18n( $track_number[0] ), number_format_i18n( $track_number[1] ) );
+			else
+				$content .= ' ' . sprintf( __( 'Track %1$s.' ), number_format_i18n( $track_number[0] ) );
+		}
+
+		if ( ! empty( $meta['genre'] ) )
+			$content .= ' ' . sprintf( __( 'Genre: %s.' ), $meta['genre'] );
+
 	// use image exif/iptc data for title and caption defaults if possible
-	if ( $image_meta = @wp_read_image_metadata($file) ) {
+	} elseif ( $image_meta = @wp_read_image_metadata( $file ) ) {
 		if ( trim( $image_meta['title'] ) && ! is_numeric( sanitize_title( $image_meta['title'] ) ) )
 			$title = $image_meta['title'];
 		if ( trim( $image_meta['caption'] ) )
@@ -340,7 +392,6 @@ wp_enqueue_style( 'ie' );
 <script type="text/javascript">
 //<![CDATA[
 addLoadEvent = function(func){if(typeof jQuery!="undefined")jQuery(document).ready(func);else if(typeof wpOnload!='function'){wpOnload=func;}else{var oldonload=wpOnload;wpOnload=function(){oldonload();func();}}};
-var userSettings = {'url':'<?php echo SITECOOKIEPATH; ?>','uid':'<?php if ( ! isset($current_user) ) $current_user = wp_get_current_user(); echo $current_user->ID; ?>','time':'<?php echo time(); ?>'};
 var ajaxurl = '<?php echo admin_url( 'admin-ajax.php', 'relative' ); ?>', pagenow = 'media-upload-popup', adminpage = 'media-upload-popup',
 isRtl = <?php echo (int) is_rtl(); ?>;
 //]]>
@@ -445,9 +496,8 @@ function media_upload_form_handler() {
 
 	if ( !empty($_POST['attachments']) ) foreach ( $_POST['attachments'] as $attachment_id => $attachment ) {
 		$post = $_post = get_post($attachment_id, ARRAY_A);
-		$post_type_object = get_post_type_object( $post[ 'post_type' ] );
 
-		if ( !current_user_can( $post_type_object->cap->edit_post, $attachment_id ) )
+		if ( !current_user_can( 'edit_post', $attachment_id ) )
 			continue;
 
 		if ( isset($attachment['post_content']) )
@@ -1108,7 +1158,7 @@ function get_media_item( $attachment_id, $args = null ) {
 	}
 
 	$display_title = ( !empty( $title ) ) ? $title : $filename; // $title shouldn't ever be empty, but just in case
-	$display_title = $show_title ? "<div class='filename new'><span class='title'>" . wp_html_excerpt( $display_title, 60 ) . "</span></div>" : '';
+	$display_title = $show_title ? "<div class='filename new'><span class='title'>" . wp_html_excerpt( $display_title, 60, '&hellip;' ) . "</span></div>" : '';
 
 	$gallery = ( ( isset( $_REQUEST['tab'] ) && 'gallery' == $_REQUEST['tab'] ) || ( isset( $redir_tab ) && 'gallery' == $redir_tab ) );
 	$order = '';
@@ -1452,7 +1502,7 @@ function media_upload_form( $errors = null ) {
 	global $type, $tab, $pagenow, $is_IE, $is_opera;
 
 	if ( ! _device_can_upload() ) {
-		echo '<p>' . __('The web browser on your device cannot be used to upload files. You may be able to use the <a href="http://wordpress.org/extend/mobile/">native app for your device</a> instead.') . '</p>';
+		echo '<p>' . sprintf( __('The web browser on your device cannot be used to upload files. You may be able to use the <a href="%s">native app for your device</a> instead.'), 'http://wordpress.org/mobile/' ) . '</p>';
 		return;
 	}
 
@@ -2270,9 +2320,7 @@ function multisite_over_quota_message() {
  *
  * @since 3.5.0
  */
-function edit_form_image_editor() {
-	$post = get_post();
-
+function edit_form_image_editor( $post ) {
 	$open = isset( $_GET['image-editor'] );
 	if ( $open )
 		require_once ABSPATH . 'wp-admin/includes/image-edit.php';
@@ -2308,17 +2356,27 @@ function edit_form_image_editor() {
 	<?php
 	elseif ( $attachment_id && 0 === strpos( $post->post_mime_type, 'audio/' ) ):
 
-		echo do_shortcode( '[audio src="' . $att_url . '"]' );
+		echo wp_audio_shortcode( array( 'src' => $att_url ) );
 
 	elseif ( $attachment_id && 0 === strpos( $post->post_mime_type, 'video/' ) ):
 
 		$meta = wp_get_attachment_metadata( $attachment_id );
-		$shortcode = sprintf( '[video src="%s"%s%s]',
-			$att_url,
-			empty( $meta['width'] ) ? '' : sprintf( ' width="%d"', $meta['width'] ),
-			empty( $meta['height'] ) ? '' : sprintf( ' height="%d"', $meta['height'] )
-		);
-		echo do_shortcode( $shortcode );
+		$w = ! empty( $meta['width'] ) ? min( $meta['width'], 600 ) : 0;
+		$h = 0;
+		if ( ! empty( $meta['height'] ) )
+			$h = $meta['height'];
+		if ( $h && $w < $meta['width'] )
+			$h = round( ( $meta['height'] * $w ) / $meta['width'] );
+
+		$attr = array( 'src' => $att_url );
+
+		if ( ! empty( $meta['width' ] ) )
+			$attr['width'] = $w;
+
+		if ( ! empty( $meta['height'] ) )
+			$attr['height'] = $h;
+
+		echo wp_video_shortcode( $attr );
 
 	endif; ?>
 	</div>
@@ -2336,7 +2394,7 @@ function edit_form_image_editor() {
 	<?php endif; ?>
 
 	<?php
-		$quicktags_settings = array( 'buttons' => 'strong,em,link,block,del,ins,img,ul,ol,li,code,spell,close' );
+		$quicktags_settings = array( 'buttons' => 'strong,em,link,block,del,ins,img,ul,ol,li,code,close' );
 		$editor_args = array(
 			'textarea_name' => 'content',
 			'textarea_rows' => 5,
@@ -2364,7 +2422,7 @@ function edit_form_image_editor() {
 function attachment_submitbox_metadata() {
 	$post = get_post();
 
-	$filename = esc_html( basename( $post->guid ) );
+	$filename = esc_html( wp_basename( $post->guid ) );
 
 	$media_dims = '';
 	$meta = wp_get_attachment_metadata( $post->ID );
@@ -2390,7 +2448,55 @@ function attachment_submitbox_metadata() {
 		?></strong>
 	</div>
 
-<?php if ( $media_dims ) : ?>
+<?php
+	if ( preg_match( '#^audio|video#', $post->post_mime_type ) ):
+
+		$fields = array(
+			'mime_type' => __( 'Mime-type:' ),
+			'year' => __( 'Year:' ),
+			'genre' => __( 'Genre:' ),
+			'length_formatted' => __( 'Length:' ),
+		);
+
+		foreach ( $fields as $key => $label ):
+			if ( ! empty( $meta[$key] ) ) : ?>
+		<div class="misc-pub-section">
+			<?php echo $label ?> <strong><?php echo esc_html( $meta[$key] ); ?></strong>
+		</div>
+	<?php
+			endif;
+		endforeach;
+
+		if ( ! empty( $meta['bitrate'] ) ) : ?>
+		<div class="misc-pub-section">
+			<?php _e( 'Bitrate:' ); ?> <strong><?php
+				echo round( $meta['bitrate'] / 1000 ), 'kb/s';
+
+				if ( ! empty( $meta['bitrate_mode'] ) )
+					echo ' ', strtoupper( $meta['bitrate_mode'] );
+
+			?></strong>
+		</div>
+	<?php
+		endif;
+
+		$audio_fields = array(
+			'dataformat' => __( 'Audio Format:' ),
+			'codec' => __( 'Audio Codec:' )
+		);
+
+		foreach ( $audio_fields as $key => $label ):
+			if ( ! empty( $meta['audio'][$key] ) ) : ?>
+		<div class="misc-pub-section">
+			<?php echo $label; ?> <strong><?php echo esc_html( $meta['audio'][$key] ); ?></strong>
+		</div>
+	<?php
+			endif;
+		endforeach;
+
+	endif;
+
+	if ( $media_dims ) : ?>
 	<div class="misc-pub-section">
 		<?php _e( 'Dimensions:' ); ?> <strong><?php echo $media_dims; ?></strong>
 	</div>
@@ -2472,7 +2578,7 @@ function wp_read_video_metadata( $file ) {
 	$metadata = array();
 
 	if ( ! class_exists( 'getID3' ) )
-		require( ABSPATH . WPINC . '/ID3/class-getid3.php' );
+		require( ABSPATH . WPINC . '/ID3/getid3.php' );
 	$id3 = new getID3();
 	$data = $id3->analyze( $file );
 
@@ -2527,7 +2633,7 @@ function wp_read_audio_metadata( $file ) {
 	$metadata = array();
 
 	if ( ! class_exists( 'getID3' ) )
-		require( ABSPATH . WPINC . '/ID3/class-getid3.php' );
+		require( ABSPATH . WPINC . '/ID3/getid3.php' );
 	$id3 = new getID3();
 	$data = $id3->analyze( $file );
 

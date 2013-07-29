@@ -73,7 +73,7 @@ foreach ( $menu as $id => $data ) {
 	$new_parent = $first_sub[2];
 	// If the first submenu is not the same as the assigned parent,
 	// make the first submenu the new parent.
-	if ( $new_parent != $old_parent && 'customize.php' != $new_parent ) {
+	if ( $new_parent != $old_parent ) {
 		$_wp_real_parent_file[$old_parent] = $new_parent;
 		$menu[$id][2] = $new_parent;
 
@@ -156,7 +156,7 @@ function add_menu_classes($menu) {
 			continue;
 		}
 
-		if ( 0 === strpos($top[2], 'separator') ) { // if separator
+		if ( 0 === strpos($top[2], 'separator') && false !== $lastorder ) { // if separator
 			$first = true;
 			$c = $menu[$lastorder][4];
 			$menu[$lastorder][4] = add_cssclass('menu-top-last', $c);

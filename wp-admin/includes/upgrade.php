@@ -433,7 +433,7 @@ function upgrade_100() {
 	foreach ($categories as $category) {
 		if ('' == $category->category_nicename) {
 			$newtitle = sanitize_title($category->cat_name);
-			$wpdb>update( $wpdb->categories, array('category_nicename' => $newtitle), array('cat_ID' => $category->cat_ID) );
+			$wpdb->update( $wpdb->categories, array('category_nicename' => $newtitle), array('cat_ID' => $category->cat_ID) );
 		}
 	}
 
@@ -1277,6 +1277,16 @@ function upgrade_network() {
 	// 3.5
 	if ( $wp_current_db_version < 21823 )
 		update_site_option( 'ms_files_rewriting', '1' );
+
+	// 3.5.2
+	if ( $wp_current_db_version < 24448 ) {
+		$illegal_names = get_site_option( 'illegal_names' );
+		if ( is_array( $illegal_names ) && count( $illegal_names ) === 1 ) {
+			$illegal_name = reset( $illegal_names );
+			$illegal_names = explode( ' ', $illegal_name );
+			update_site_option( 'illegal_names', $illegal_names );
+		}
+	}
 }
 
 // The functions we use to actually do stuff
@@ -1417,11 +1427,7 @@ function __get_option($setting) {
 	if ( 'siteurl' == $setting || 'home' == $setting || 'category_base' == $setting || 'tag_base' == $setting )
 		$option = untrailingslashit( $option );
 
-	@ $kellogs = unserialize( $option );
-	if ( $kellogs !== false )
-		return $kellogs;
-	else
-		return $option;
+	return maybe_unserialize( $option );
 }
 
 /**
@@ -1566,7 +1572,7 @@ function dbDelta( $queries = '', $execute = true ) {
 
 				// Get the default value from the array
 					//echo "{$cfields[strtolower($tablefield->Field)]}<br>";
-				if (preg_match("| DEFAULT '(.*)'|i", $cfields[strtolower($tablefield->Field)], $matches)) {
+				if (preg_match("| DEFAULT '(.*?)'|i", $cfields[strtolower($tablefield->Field)], $matches)) {
 					$default_value = $matches[1];
 					if ($tablefield->Default != $default_value) {
 						// Add a query to change the column's default value
@@ -1642,7 +1648,7 @@ function dbDelta( $queries = '', $execute = true ) {
 		foreach ( (array) $indices as $index ) {
 			// Push a query line into $cqueries that adds the index to that table
 			$cqueries[] = "ALTER TABLE {$table} ADD $index";
-			$for_update[$table.'.'.$fieldname] = 'Added index '.$table.' '.$index;
+			$for_update[] = 'Added index ' . $table . ' ' . $index;
 		}
 
 		// Remove the original table creation query from processing

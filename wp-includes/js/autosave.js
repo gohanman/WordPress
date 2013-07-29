@@ -2,7 +2,27 @@ var autosave, autosaveLast = '', autosavePeriodical, autosaveDelayPreview = fals
 
 jQuery(document).ready( function($) {
 
-	autosaveLast = ( $('#post #title').val() || '' ) + ( $('#post #content').val() || '' );
+	if ( $('#wp-content-wrap').hasClass('tmce-active') && typeof tinymce != 'undefined' ) {
+		tinymce.onAddEditor.add( function( tinymce, editor ) {
+			if ( 'content' == editor.id ) {
+				editor.onLoad.add( function() {
+					editor.save();
+					if ( typeof switchEditors != 'undefined' ) {
+						autosaveLast = wp.autosave.getCompareString({
+							post_title : $('#title').val() || '',
+							content : switchEditors.pre_wpautop( $('#content').val() ) || '',
+							excerpt : $('#excerpt').val() || '',
+						});
+					} else {
+						autosaveLast = wp.autosave.getCompareString();
+					}
+				});
+			}
+		});
+	} else {
+		autosaveLast = wp.autosave.getCompareString();
+	}
+
 	autosavePeriodical = $.schedule({time: autosaveL10n.autosaveInterval * 1000, func: function() { autosave(); }, repeat: true, protect: true});
 
 	//Disable autosave after the form has been submitted
@@ -28,21 +48,23 @@ jQuery(document).ready( function($) {
 	});
 
 	window.onbeforeunload = function(){
-		var mce = typeof(tinymce) != 'undefined' ? tinymce.activeEditor : false, title, content;
+		var editor = typeof(tinymce) != 'undefined' ? tinymce.activeEditor : false, compareString;
 
-		if ( mce && !mce.isHidden() ) {
-			if ( mce.isDirty() )
+		if ( editor && ! editor.isHidden() ) {
+			if ( editor.isDirty() )
 				return autosaveL10n.saveAlert;
 		} else {
 			if ( fullscreen && fullscreen.settings.visible ) {
-				title = $('#wp-fullscreen-title').val() || '';
-				content = $("#wp_mce_fullscreen").val() || '';
+				compareString = wp.autosave.getCompareString({
+					post_title: $('#wp-fullscreen-title').val() || '',
+					content: $('#wp_mce_fullscreen').val() || '',
+					excerpt: $('#excerpt').val() || ''
+				});
 			} else {
-				title = $('#post #title').val() || '';
-				content = $('#post #content').val() || '';
+				compareString = wp.autosave.getCompareString();
 			}
 
-			if ( ( title || content ) && title + content != autosaveLast )
+			if ( compareString != autosaveLast )
 				return autosaveL10n.saveAlert;
 		}
 	};
@@ -130,12 +152,18 @@ jQuery(document).ready( function($) {
 	}
 
 	// When connection is lost, keep user from submitting changes.
-	$(document).on('heartbeat-connection-lost.autosave', function() {
-		autosave_disable_buttons();
-		$('#lost-connection-notice').show();
+	$(document).on('heartbeat-connection-lost.autosave', function( e, error ) {
+		if ( 'timeout' === error ) {
+			var notice = $('#lost-connection-notice');
+			if ( ! wp.autosave.local.hasStorage ) {
+				notice.find('.hide-if-no-sessionstorage').hide();
+			}
+			notice.show();
+			autosave_disable_buttons();
+		}
 	}).on('heartbeat-connection-restored.autosave', function() {
-		autosave_enable_buttons();
 		$('#lost-connection-notice').hide();
+		autosave_enable_buttons();
 	});
 });
 
@@ -227,7 +255,8 @@ function autosave_loading() {
 }
 
 function autosave_enable_buttons() {
-	if ( ! wp.heartbeat.connectionLost ) {
+	jQuery(document).trigger('autosave-enable-buttons');
+	if ( ! wp.heartbeat || ! wp.heartbeat.hasConnectionError() ) {
 		// delay that a bit to avoid some rare collisions while the DOM is being updated.
 		setTimeout(function(){
 			var parent = jQuery('#submitpost');
@@ -238,6 +267,7 @@ function autosave_enable_buttons() {
 }
 
 function autosave_disable_buttons() {
+	jQuery(document).trigger('autosave-disable-buttons');
 	jQuery('#submitpost').find(':button, :submit').prop('disabled', true);
 	// Re-enable 5 sec later. Just gives autosave a head start to avoid collisions.
 	setTimeout( autosave_enable_buttons, 5000 );
@@ -252,35 +282,31 @@ function delayed_autosave() {
 }
 
 autosave = function() {
-	// (bool) is rich editor enabled and active
+	var post_data = wp.autosave.getPostData(),
+		compareString,
+		successCallback;
+
 	blockSave = true;
-	var rich = (typeof tinymce != "undefined") && tinymce.activeEditor && !tinymce.activeEditor.isHidden(),
-		post_data, doAutoSave, ed, origStatus, successCallback;
 
-	// Disable buttons until we know the save completed.
-	autosave_disable_buttons();
-
-	post_data = wp.autosave.getPostData();
-
-	// We always send the ajax request in order to keep the post lock fresh.
-	// This (bool) tells whether or not to write the post to the DB during the ajax request.
-	doAutoSave = post_data.autosave;
+	// post_data.content cannot be retrieved at the moment
+	if ( ! post_data.autosave )
+		return false;
 
 	// No autosave while thickbox is open (media buttons)
 	if ( jQuery("#TB_window").css('display') == 'block' )
-		doAutoSave = false;
+		return false;
+
+	compareString = wp.autosave.getCompareString( post_data );
 
 	// Nothing to save or no change.
-	if ( ( post_data["post_title"].length == 0 && post_data["content"].length == 0 ) || post_data["post_title"] + post_data["content"] == autosaveLast ) {
-		doAutoSave = false;
-	}
+	if ( compareString == autosaveLast )
+		return false;
 
-	if ( doAutoSave ) {
-		autosaveLast = post_data["post_title"] + post_data["content"];
-		jQuery(document).triggerHandler('wpcountwords', [ post_data["content"] ]);
-	} else {
-		post_data['autosave'] = 0;
-	}
+	autosaveLast = compareString;
+	jQuery(document).triggerHandler('wpcountwords', [ post_data["content"] ]);
+
+	// Disable buttons until we know the save completed.
+	autosave_disable_buttons();
 
 	if ( post_data["auto_draft"] == '1' ) {
 		successCallback = autosave_saved_new; // new post
@@ -290,11 +316,13 @@ autosave = function() {
 
 	jQuery.ajax({
 		data: post_data,
-		beforeSend: doAutoSave ? autosave_loading : null,
+		beforeSend: autosave_loading,
 		type: "POST",
 		url: ajaxurl,
 		success: successCallback
 	});
+
+	return true;
 }
 
 // Autosave in localStorage
@@ -365,13 +393,21 @@ wp.autosave.getPostData = function() {
 		data['auto_draft'] = '1';
 
 	return data;
-}
+};
+
+// Concatenate title, content and excerpt. Used to track changes when auto-saving.
+wp.autosave.getCompareString = function( post_data ) {
+	if ( typeof post_data === 'object' ) {
+		return ( post_data.post_title || '' ) + '::' + ( post_data.content || '' ) + '::' + ( post_data.excerpt || '' );
+	}
+
+	return ( $('#title').val() || '' ) + '::' + ( $('#content').val() || '' ) + '::' + ( $('#excerpt').val() || '' );
+};
 
 wp.autosave.local = {
 
-	lastsaveddata: '',
+	lastSavedData: '',
 	blog_id: 0,
-	ajaxurl: window.ajaxurl || 'wp-admin/admin-ajax.php',
 	hasStorage: false,
 
 	// Check if the browser supports sessionStorage and it's not disabled
@@ -475,33 +511,32 @@ wp.autosave.local = {
 	 * @return bool
 	 */
 	save: function( data ) {
-		var result = false;
+		var result = false, post_data, compareString;
 
 		if ( ! data ) {
 			post_data = wp.autosave.getPostData();
 		} else {
 			post_data = this.getData() || {};
 			$.extend( post_data, data );
+			post_data.autosave = true;
 		}
 
-		// If the content and title did not change since the last save, don't save again
-		if ( post_data.post_title + ': ' + post_data.content == this.lastsaveddata )
+		// Cannot get the post data at the moment
+		if ( ! post_data.autosave )
 			return false;
 
-		// Cannot get the post data at the moment
-		if ( !post_data.autosave )
+		compareString = wp.autosave.getCompareString( post_data );
+
+		// If the content, title and excerpt did not change since the last save, don't save again
+		if ( compareString == this.lastSavedData )
 			return false;
 
 		post_data['save_time'] = (new Date()).getTime();
 		post_data['status'] = $('#post_status').val() || '';
 		result = this.setData( post_data );
 
-		// temp logging
-		if ( typeof console != 'undefined' )
-			console.log( 'Local autosave: saved, post content = %s', post_data.content );
-
 		if ( result )
-			this.lastsaveddata = post_data.post_title + ': ' + post_data.content;
+			this.lastSavedData = compareString;
 
 		return result;
 	},
@@ -510,11 +545,12 @@ wp.autosave.local = {
 	init: function( settings ) {
 		var self = this;
 
-		// Run only on the Add/Edit Post screens and in browsers that have sessionStorage
-		if ( 'post' != window.pagenow || ! this.checkStorage() )
+		// Check if the browser supports sessionStorage and it's not disabled
+		if ( ! this.checkStorage() )
 			return;
-		// editor.js has to be loaded before autosave.js
-		if ( typeof switchEditors == 'undefined' )
+
+		// Don't run if the post type supports neither 'editor' (textarea#content) nor 'excerpt'.
+		if ( ! $('#content').length && ! $('#excerpt').length )
 			return;
 
 		if ( settings )
@@ -523,23 +559,15 @@ wp.autosave.local = {
 		if ( !this.blog_id )
 			this.blog_id = typeof window.autosaveL10n != 'undefined' ? window.autosaveL10n.blog_id : 0;
 
-		this.checkPost();
 		$(document).ready( function(){ self.run(); } );
 	},
 
 	// Run on DOM ready
 	run: function() {
-		var self = this, post_data;
+		var self = this;
 
-		// Set the comparison string
-		if ( !this.lastsaveddata ) {
-			post_data = wp.autosave.getPostData();
-
-			if ( post_data.content && $('#wp-content-wrap').hasClass('tmce-active') )
-				this.lastsaveddata = post_data.post_title + ': ' + switchEditors.pre_wpautop( post_data.content );
-			else
-				this.lastsaveddata = post_data.post_title + ': ' + post_data.content;
-		}
+		// Check if the local post data is different than the loaded post data.
+		this.checkPost();
 
 		// Set the schedule
 		this.schedule = $.schedule({
@@ -590,12 +618,8 @@ wp.autosave.local = {
 	 * @return void
 	 */
 	checkPost: function() {
-		var self = this, post_data = this.getData(), content, check_data, strip_tags = false, notice,
+		var self = this, post_data = this.getData(), content, post_title, excerpt, notice,
 			post_id = $('#post_ID').val() || 0, cookie = wpCookies.get( 'wp-saving-post-' + post_id );
-
-		// temp logging
-		if ( typeof console != 'undefined' )
-			console.log( 'Local autosave: checkPost, cookie = %s, post content = %s', cookie, post_data && post_data.content );
 
 		if ( ! post_data )
 			return;
@@ -614,23 +638,27 @@ wp.autosave.local = {
 		if ( $('#has-newer-autosave').length )
 			return;
 
+		content = $('#content').val() || '';
+		post_title = $('#title').val() || '';
+		excerpt = $('#excerpt').val() || '';
+
+		if ( $('#wp-content-wrap').hasClass('tmce-active') && typeof switchEditors != 'undefined' )
+			content = switchEditors.pre_wpautop( content );
+
 		// cookie == 'check' means the post was not saved properly, always show #local-storage-notice
-		if ( cookie != 'check' ) {
-			content = $('#content').val();
-			check_data = $.extend( {}, post_data );
-
-			if ( $('#wp-content-wrap').hasClass('tmce-active') )
-				content = switchEditors.pre_wpautop( content );
-
-			if ( this.compare( content, check_data.content ) && this.compare( $('#title').val(), check_data.post_title ) && this.compare( $('#excerpt').val(), check_data.excerpt ) )
-				return;
+		if ( cookie != 'check' && this.compare( content, post_data.content ) && this.compare( post_title, post_data.post_title ) && this.compare( excerpt, post_data.excerpt ) ) {
+			return;
 		}
 
 		this.restore_post_data = post_data;
-		this.undo_post_data = wp.autosave.getPostData();
+		this.undo_post_data = {
+			content: content,
+			post_title: post_title,
+			excerpt: excerpt
+		};
 
 		notice = $('#local-storage-notice');
-		$('form#post').before( notice.addClass('updated').show() );
+		$('.wrap h2').first().after( notice.addClass('updated').show() );
 
 		notice.on( 'click', function(e) {
 			var target = $( e.target );
@@ -655,7 +683,7 @@ wp.autosave.local = {
 
 		if ( post_data ) {
 			// Set the last saved data
-			this.lastsaveddata = post_data.post_title + ': ' + post_data.content;
+			this.lastSavedData = wp.autosave.getCompareString( post_data );
 
 			if ( $('#title').val() != post_data.post_title )
 				$('#title').focus().val( post_data.post_title || '' );
@@ -663,7 +691,7 @@ wp.autosave.local = {
 			$('#excerpt').val( post_data.excerpt || '' );
 			editor = typeof tinymce != 'undefined' && tinymce.get('content');
 
-			if ( editor && ! editor.isHidden() ) {
+			if ( editor && ! editor.isHidden() && typeof switchEditors != 'undefined' ) {
 				// Make sure there's an undo level in the editor
 				editor.undoManager.add();
 				editor.setContent( post_data.content ? switchEditors.wpautop( post_data.content ) : '' );
@@ -678,7 +706,7 @@ wp.autosave.local = {
 
 		return false;
 	}
-}
+};
 
 wp.autosave.local.init();
 

@@ -80,7 +80,7 @@ function wpmu_delete_blog( $blog_id, $drop = false ) {
 		$drop = false;
 
 	if ( $drop ) {
-		$drop_tables = apply_filters( 'wpmu_drop_tables', $wpdb->tables( 'blog' ) );
+		$drop_tables = apply_filters( 'wpmu_drop_tables', $wpdb->tables( 'blog' ), $blog_id );
 
 		foreach ( (array) $drop_tables as $table ) {
 			$wpdb->query( "DROP TABLE IF EXISTS `$table`" );
@@ -502,26 +502,6 @@ function mu_dropdown_languages( $lang_files = array(), $current = '' ) {
 	$output = apply_filters( 'mu_dropdown_languages', $output, $lang_files, $current );
 	echo implode( "\n\t", $output );
 }
-
-/* Warn the admin if SECRET SALT information is missing from wp-config.php */
-function secret_salt_warning() {
-	if ( !is_super_admin() )
-		return;
-	$secret_keys = array( 'AUTH_KEY', 'SECURE_AUTH_KEY', 'LOGGED_IN_KEY', 'NONCE_KEY', 'AUTH_SALT', 'SECURE_AUTH_SALT', 'LOGGED_IN_SALT', 'NONCE_SALT' );
-	$out = '';
-	foreach( $secret_keys as $key ) {
-		if ( ! defined( $key ) )
-			$out .= "define( '$key', '" . esc_html( wp_generate_password( 64, true, true ) ) . "' );<br />";
-	}
-	if ( $out != '' ) {
-		$msg  = __( 'Warning! WordPress encrypts user cookies, but you must add the following lines to <strong>wp-config.php</strong> for it to be more secure.' );
-		$msg .= '<br/>' . __( "Before the line <code>/* That's all, stop editing! Happy blogging. */</code> please add this code:" );
-		$msg .= "<br/><br/><code>$out</code>";
-
-		echo "<div class='update-nag'>$msg</div>";
-	}
-}
-add_action( 'network_admin_notices', 'secret_salt_warning' );
 
 function site_admin_notice() {
 	global $wp_db_version;

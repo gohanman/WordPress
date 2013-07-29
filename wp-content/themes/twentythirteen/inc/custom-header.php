@@ -58,10 +58,22 @@ function twentythirteen_custom_header_setup() {
 			'description'   => _x( 'Star', 'header image description', 'twentythirteen' )
 		),
 	) );
-
-	add_action( 'admin_print_styles-appearance_page_custom-header', 'twentythirteen_fonts' );
 }
 add_action( 'after_setup_theme', 'twentythirteen_custom_header_setup' );
+
+/**
+ * Loads our special font CSS files.
+ *
+ * @since Twenty Thirteen 1.0
+ */
+function twentythirteen_custom_header_fonts() {
+	// Add Open Sans and Bitter fonts.
+	wp_enqueue_style( 'twentythirteen-fonts', twentythirteen_fonts_url(), array(), null );
+
+	// Add Genericons font.
+	wp_enqueue_style( 'genericons', get_template_directory_uri() . '/fonts/genericons.css', array(), '2.09' );
+}
+add_action( 'admin_print_styles-appearance_page_custom-header', 'twentythirteen_custom_header_fonts' );
 
 /**
  * Styles the header text displayed on the blog.
@@ -80,7 +92,7 @@ function twentythirteen_header_style() {
 
 	// If we get this far, we have custom styles.
 	?>
-	<style type="text/css">
+	<style type="text/css" id="twentythirteen-header-css">
 	<?php
 		if ( ! empty( $header_image ) ) :
 	?>
@@ -103,7 +115,7 @@ function twentythirteen_header_style() {
 	<?php
 			if ( empty( $header_image ) ) :
 	?>
-		.site-header hgroup {
+		.site-header .home-link {
 			min-height: 0;
 		}
 	<?php
@@ -129,7 +141,7 @@ function twentythirteen_header_style() {
 function twentythirteen_admin_header_style() {
 	$header_image = get_header_image();
 ?>
-	<style type="text/css">
+	<style type="text/css" id="twentythirteen-admin-header-css">
 	.appearance_page_custom-header #headimg {
 		border: none;
 		-webkit-box-sizing: border-box;
@@ -141,7 +153,7 @@ function twentythirteen_admin_header_style() {
 		} ?>
 		padding: 0 20px;
 	}
-	#headimg .hgroup {
+	#headimg .home-link {
 		-webkit-box-sizing: border-box;
 		-moz-box-sizing:    border-box;
 		box-sizing:         border-box;
@@ -195,9 +207,9 @@ function twentythirteen_admin_header_image() {
 	?>
 	<div id="headimg" style="background: url(<?php header_image(); ?>) no-repeat scroll top; background-size: 1600px auto;">
 		<?php $style = ' style="color:#' . get_header_textcolor() . ';"'; ?>
-		<div class="hgroup">
-			<h1><a id="name"<?php echo $style; ?> onclick="return false;" href="#"><?php bloginfo( 'name' ); ?></a></h1>
-			<h2 id="desc"<?php echo $style; ?>><?php bloginfo( 'description' ); ?></h2>
+		<div class="home-link">
+			<h1 class="displaying-header-text"><a id="name"<?php echo $style; ?> onclick="return false;" href="#"><?php bloginfo( 'name' ); ?></a></h1>
+			<h2 id="desc" class="displaying-header-text"<?php echo $style; ?>><?php bloginfo( 'description' ); ?></h2>
 		</div>
 	</div>
 <?php }

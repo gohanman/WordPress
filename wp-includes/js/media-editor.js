@@ -45,7 +45,7 @@
 			props.title = props.title || attachment.title;
 
 			link = props.link || defaultProps.link || getUserSetting( 'urlbutton', 'file' );
-			if ( 'file' === link )
+			if ( 'file' === link || 'embed' === link )
 				linkUrl = attachment.url;
 			else if ( 'post' === link )
 				linkUrl = attachment.link;
@@ -97,81 +97,41 @@
 		},
 
 		audio: function( props, attachment ) {
-			var shortcode, html;
-
-			props = wp.media.string.props( props, attachment );
-			shortcode = {};
-
-			if ( props.mime ) {
-				switch ( props.mime ) {
-				case 'audio/mpeg':
-					if ( attachment.url.indexOf( 'mp3' ) )
-						shortcode.mp3 = attachment.url;
-					else if ( attachment.url.indexOf( 'm4a' ) )
-						shortcode.m4a = attachment.url;
-					break;
-				case 'audio/mp3':
-					shortcode.mp3 = attachment.url;
-					break;
-				case 'audio/m4a':
-					shortcode.m4a = attachment.url;
-					break;
-				case 'audio/wav':
-					shortcode.wav = attachment.url;
-					break;
-				case 'audio/ogg':
-					shortcode.ogg = attachment.url;
-					break;
-				case 'audio/x-ms-wma':
-				case 'audio/wma':
-					shortcode.wma = attachment.url;
-					break;
-				}
-			}
-
-			html = wp.shortcode.string({
-				tag:     'audio',
-				attrs:   shortcode
-			});
-
-			return html;
+			return wp.media.string._audioVideo( 'audio', props, attachment );
 		},
 
 		video: function( props, attachment ) {
-			var shortcode, html;
+			return wp.media.string._audioVideo( 'video', props, attachment );
+		},
+
+		_audioVideo: function( type, props, attachment ) {
+			var shortcode, html, extension;
 
 			props = wp.media.string.props( props, attachment );
+			if ( props.link !== 'embed' )
+				return wp.media.string.link( props );
 
 			shortcode = {};
 
-			if ( props.mime ) {
-				switch ( props.mime ) {
-				case 'video/mp4':
-					shortcode.mp4 = attachment.url;
-					break;
-				case 'video/m4v':
-					shortcode.m4v = attachment.url;
-					break;
-				case 'video/webm':
-					shortcode.webm = attachment.url;
-					break;
-				case 'video/ogg':
-					shortcode.ogv = attachment.url;
-					break;
-				case 'video/x-ms-wmv':
-				case 'video/wmv':
-				case 'video/asf':
-					shortcode.wmv = attachment.url;
-					break;
-				case 'video/flv':
-				case 'video/x-flv':
-					shortcode.flv = attachment.url
-					break;
-				}
+			if ( 'video' === type ) {
+				if ( attachment.width )
+					shortcode.width = attachment.width;
+
+				if ( attachment.height )
+					shortcode.height = attachment.height;
+			}
+
+			extension = attachment.filename.split('.').pop();
+
+			if ( _.contains( wp.media.view.settings.embedExts, extension ) ) {
+				shortcode[extension] = attachment.url;
+			} else {
+				// Render unsupported audio and video files as links.
+				return wp.media.string.link( props );
 			}
 
 			html = wp.shortcode.string({
-				tag:     'video',
+				tag:     type,
 				attrs:   shortcode
 			});
 
@@ -185,7 +145,7 @@
 			props = wp.media.string.props( props, attachment );
 			classes = props.classes || [];
 
-			img.src = props.url;
+			img.src = typeof attachment !== 'undefined' ? attachment.url : props.url;
 			_.extend( img, _.pick( props, 'width', 'height', 'alt' ) );
 
 			// Only assign the align class to the image if we're not printing
@@ -253,6 +213,7 @@
 				icontag:    'dt',
 				captiontag: 'dd',
 				columns:    '3',
+				link:       'post',
 				size:       'thumbnail',
 				orderby:    'menu_order ID'
 			},
@@ -532,7 +493,7 @@
 		add: function( id, options ) {
 			var workflow = this.get( id );
 
-			if ( workflow )
+			if ( workflow ) // only add once: if exists return existing
 				return workflow;
 
 			workflow = workflows[ id ] = wp.media( _.defaults( options || {}, {
@@ -686,8 +647,10 @@
 			}
 		},
 
-		open: function( id ) {
+		open: function( id, options ) {
 			var workflow, editor;
+
+			options = options || {};
 
 			id = this.id( id );
 
@@ -703,9 +666,9 @@
 
 			workflow = this.get( id );
 
-			// Initialize the editor's workflow if we haven't yet.
-			if ( ! workflow )
-				workflow = this.add( id );
+			// Redo workflow if state has changed
+			if ( ! workflow || ( workflow.options && options.state !== workflow.options.state ) )
+				workflow = this.add( id, options );
 
 			return workflow.open();
 		},
@@ -713,7 +676,13 @@
 		init: function() {
 			$(document.body).on( 'click', '.insert-media', function( event ) {
 				var $this = $(this),
-					editor = $this.data('editor');
+					editor = $this.data('editor'),
+					options = {
+						frame:    'post',
+						state:    'insert',
+						title:    wp.media.view.l10n.addMedia,
+						multiple: true
+					};
 
 				event.preventDefault();
 
@@ -724,7 +693,12 @@
 				// See: http://core.trac.wordpress.org/ticket/22445
 				$this.blur();
 
-				wp.media.editor.open( editor );
+				if ( $this.hasClass( 'gallery' ) ) {
+					options.state = 'gallery';
+					options.title = wp.media.view.l10n.createGalleryTitle;
+				}
+
+				wp.media.editor.open( editor, options );
 			});
 		}
 	};

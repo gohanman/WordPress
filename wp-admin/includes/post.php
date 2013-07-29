@@ -28,7 +28,7 @@ function _wp_translate_postdata( $update = false, $post_data = null ) {
 
 	$ptype = get_post_type_object( $post_data['post_type'] );
 
-	if ( $update && ! current_user_can( $ptype->cap->edit_post, $post_data['ID'] ) ) {
+	if ( $update && ! current_user_can( 'edit_post', $post_data['ID'] ) ) {
 		if ( 'page' == $post_data['post_type'] )
 			return new WP_Error( 'edit_others_pages', __( 'You are not allowed to edit pages as this user.' ) );
 		else
@@ -65,14 +65,23 @@ function _wp_translate_postdata( $update = false, $post_data = null ) {
 		}
 	}
 
-	if ( ! $update && isset( $post_data['user_ID'] ) && ( $post_data['post_author'] != $post_data['user_ID'] )
+	if ( isset( $post_data['user_ID'] ) && ( $post_data['post_author'] != $post_data['user_ID'] )
 		 && ! current_user_can( $ptype->cap->edit_others_posts ) ) {
-
-		if ( 'page' == $post_data['post_type'] )
-			return new WP_Error( 'edit_others_pages', __( 'You are not allowed to create pages as this user.' ) );
-		else
-			return new WP_Error( 'edit_others_posts', __( 'You are not allowed to create posts as this user.' ) );
+		if ( $update ) {
+			if ( 'page' == $post_data['post_type'] )
+				return new WP_Error( 'edit_others_pages', __( 'You are not allowed to edit pages as this user.' ) );
+			else
+				return new WP_Error( 'edit_others_posts', __( 'You are not allowed to edit posts as this user.' ) );
+		} else {
+			if ( 'page' == $post_data['post_type'] )
+				return new WP_Error( 'edit_others_pages', __( 'You are not allowed to create pages as this user.' ) );
+			else
+				return new WP_Error( 'edit_others_posts', __( 'You are not allowed to create posts as this user.' ) );
+		}
 	}
+
+	if ( ! empty( $post_data['post_status'] ) )
+		$post_data['post_status'] = sanitize_key( $post_data['post_status'] );
 
 	// What to do based on which button they pressed
 	if ( isset($post_data['saveasdraft']) && '' != $post_data['saveasdraft'] )
@@ -92,10 +101,12 @@ function _wp_translate_postdata( $update = false, $post_data = null ) {
 		$post_id = false;
 	$previous_status = $post_id ? get_post_field( 'post_status', $post_id ) : false;
 
+	$published_statuses = array( 'publish', 'future' );
+
 	// Posts 'submitted for approval' present are submitted to $_POST the same as if they were being published.
 	// Change status from 'publish' to 'pending' if user lacks permissions to publish or to resave published posts.
-	if ( isset($post_data['post_status']) && ('publish' == $post_data['post_status'] && !current_user_can( $ptype->cap->publish_posts )) )
-		if ( $previous_status != 'publish' || !current_user_can( 'edit_post', $post_id ) )
+	if ( isset($post_data['post_status']) && (in_array( $post_data['post_status'], $published_statuses ) && !current_user_can( $ptype->cap->publish_posts )) )
+		if ( ! in_array( $previous_status, $published_statuses ) || !current_user_can( 'edit_post', $post_id ) )
 			$post_data['post_status'] = 'pending';
 
 	if ( ! isset($post_data['post_status']) )
@@ -161,7 +172,7 @@ function edit_post( $post_data = null ) {
 	$post_data['post_mime_type'] = $post->post_mime_type;
 
 	$ptype = get_post_type_object($post_data['post_type']);
-	if ( !current_user_can( $ptype->cap->edit_post, $post_ID ) ) {
+	if ( !current_user_can( 'edit_post', $post_ID ) ) {
 		if ( 'page' == $post_data['post_type'] )
 			wp_die( __('You are not allowed to edit this page.' ));
 		else
@@ -192,19 +203,26 @@ function edit_post( $post_data = null ) {
 	}
 
 	// Post Formats
-	if ( isset( $post_data['post_format'] ) ) {
+	if ( isset( $post_data['post_format'] ) )
 		set_post_format( $post_ID, $post_data['post_format'] );
+
+	$format_meta_urls = array( 'url', 'link_url', 'quote_source_url' );
+	foreach ( $format_meta_urls as $format_meta_url ) {
+		$keyed = '_format_' . $format_meta_url;
+		if ( isset( $post_data[ $keyed ] ) )
+			update_post_meta( $post_ID, $keyed, wp_slash( esc_url_raw( wp_unslash( $post_data[ $keyed ] ) ) ) );
 	}
 
-	if ( isset( $post_data[ '_wp_format_url' ] ) ) {
-		update_post_meta( $post_ID, '_wp_format_url', wp_slash( esc_url_raw( wp_unslash( $post_data['_wp_format_url'] ) ) ) );
-	}
-
-	$format_keys = array( 'quote', 'quote_source', 'image', 'gallery', 'audio', 'video' );
+	$format_keys = array( 'quote', 'quote_source_name', 'image', 'gallery', 'audio_embed', 'video_embed' );
 
 	foreach ( $format_keys as $key ) {
-		if ( isset( $post_data[ '_wp_format_' . $key ] ) )
-		 	update_post_meta( $post_ID, '_wp_format_' . $key, wp_filter_post_kses( $post_data[ '_wp_format_' . $key ] ) );
+		$keyed = '_format_' . $key;
+		if ( isset( $post_data[ $keyed ] ) ) {
+			if ( current_user_can( 'unfiltered_html' ) )
+				update_post_meta( $post_ID, $keyed, $post_data[ $keyed ] );
+			else
+				update_post_meta( $post_ID, $keyed, wp_filter_post_kses( $post_data[ $keyed ] ) );
+		}
 	}
 
 	// Meta Stuff
@@ -356,7 +374,7 @@ function bulk_edit_posts( $post_data = null ) {
 	foreach ( $post_IDs as $post_ID ) {
 		$post_type_object = get_post_type_object( get_post_type( $post_ID ) );
 
-		if ( !isset( $post_type_object ) || ( isset($children) && in_array($post_ID, $children) ) || !current_user_can( $post_type_object->cap->edit_post, $post_ID ) ) {
+		if ( !isset( $post_type_object ) || ( isset($children) && in_array($post_ID, $children) ) || !current_user_can( 'edit_post', $post_ID ) ) {
 			$skipped[] = $post_ID;
 			continue;
 		}
@@ -628,7 +646,7 @@ function add_meta( $post_ID ) {
 		if ( is_protected_meta( $metakey, 'post' ) || ! current_user_can( 'add_post_meta', $post_ID, $metakey ) )
 			return false;
 
-		$metakey = esc_sql( $metakey );
+		$metakey = wp_slash( $metakey );
 
 		return add_post_meta( $post_ID, $metakey, $metavalue );
 	}
@@ -988,9 +1006,8 @@ function get_sample_permalink($id, $title = null, $name = null) {
 	$original_date = $post->post_date;
 	$original_name = $post->post_name;
 
-	// Hack: get_permalink would return ugly permalink for
-	// drafts, so we will fake, that our post is published
-	if ( in_array($post->post_status, array('draft', 'pending')) ) {
+	// Hack: get_permalink() would return ugly permalink for drafts, so we will fake that our post is published.
+	if ( in_array( $post->post_status, array( 'draft', 'pending' ) ) ) {
 		$post->post_status = 'publish';
 		$post->post_name = sanitize_title($post->post_name ? $post->post_name : $post->post_title, $post->ID);
 	}
@@ -1190,28 +1207,44 @@ function _admin_notice_post_locked() {
 	if ( ! $post = get_post() )
 		return;
 
-	if ( $user = wp_check_post_lock( $post->ID ) ) {
-		$user = get_userdata( $user );
+	if ( ( $user_id = wp_check_post_lock( $post->ID ) ) && ( $user = get_userdata( $user_id ) ) ) {
 		$locked = apply_filters( 'show_post_locked_dialog', true, $post, $user );
 	} else {
 		$locked = false;
 	}
 
-	$class = $locked ? '' : ' class="hidden"';
+	if ( $locked && ( $sendback = wp_get_referer() ) &&
+		false === strpos( $sendback, 'post.php' ) && false === strpos( $sendback, 'post-new.php' ) ) {
+
+		$sendback_text = __('Go back');
+	} else {
+		$sendback = admin_url( 'edit.php' );
+
+		if ( 'post' != $post->post_type )
+			$sendback = add_query_arg( 'post_type', $post->post_type, $sendback );
+
+		$sendback_text = get_post_type_object( $post->post_type )->labels->all_items;
+	}
+
+	$hidden = $locked ? '' : ' hidden';
 
 	?>
-	<div id="notification-dialog-wrap"<?php echo $class; ?>>
-	<div id="notification-dialog-background"></div>
-	<div id="notification-dialog">
+	<div id="post-lock-dialog" class="notification-dialog-wrap<?php echo $hidden; ?>">
+	<div class="notification-dialog-background"></div>
+	<div class="notification-dialog">
 	<?php
 
 	if ( $locked ) {
-		$preview_link = set_url_scheme( add_query_arg( 'preview', 'true', get_permalink( $post->ID ) ) );
+		if ( get_post_type_object( $post->post_type )->public ) {
+			$preview_link = set_url_scheme( add_query_arg( 'preview', 'true', get_permalink( $post->ID ) ) );
 
-		if ( 'publish' == $post->post_status || $user->ID != $post->post_author ) {
-			// Latest content is in autosave
-			$nonce = wp_create_nonce( 'post_preview_' . $post->ID );
-			$preview_link = add_query_arg( array( 'preview_id' => $post->ID, 'preview_nonce' => $nonce ), $preview_link );
+			if ( 'publish' == $post->post_status || $user->ID != $post->post_author ) {
+				// Latest content is in autosave
+				$nonce = wp_create_nonce( 'post_preview_' . $post->ID );
+				$preview_link = add_query_arg( array( 'preview_id' => $post->ID, 'preview_nonce' => $nonce ), $preview_link );
+			}
+		} else {
+			$preview_link = '';
 		}
 
 		$preview_link = apply_filters( 'preview_post_link', $preview_link );
@@ -1222,10 +1255,13 @@ function _admin_notice_post_locked() {
 		<div class="post-locked-message">
 		<div class="post-locked-avatar"><?php echo get_avatar( $user->ID, 64 ); ?></div>
 		<p class="currently-editing wp-tab-first" tabindex="0"><?php esc_html_e( sprintf( __( 'This content is currently locked. If you take over, %s will be blocked from continuing to edit.' ), $user->display_name ) ); ?></p>
+		<?php do_action( 'post_lock_text', $post ); ?>
 		<p>
-		<a class="button" href="<?php echo esc_url( wp_get_referer() ); ?>"><?php _e('Go back'); ?></a>
+		<a class="button" href="<?php echo esc_url( $sendback ); ?>"><?php echo $sendback_text; ?></a>
+		<?php if ( $preview_link ) { ?>
 		<a class="button<?php echo $tab_last; ?>" href="<?php echo esc_url( $preview_link ); ?>"><?php _e('Preview'); ?></a>
 		<?php
+		}
 
 		// Allow plugins to prevent some users overriding the post lock
 		if ( $override ) {
@@ -1242,8 +1278,13 @@ function _admin_notice_post_locked() {
 		?>
 		<div class="post-taken-over">
 			<div class="post-locked-avatar"></div>
-			<p class="currently-editing wp-tab-first" tabindex="0"></p>
-			<p><a class="button button-primary wp-tab-last" href="<?php echo esc_url( admin_url('edit.php') ); ?>"><?php _e('Go to All Posts'); ?></a></p>
+			<p class="wp-tab-first" tabindex="0">
+			<span class="currently-editing"></span><br>
+			<span class="locked-saving hidden"><img src="images/wpspin_light-2x.gif" width="16" height="16" /> <?php _e('Saving revision...'); ?></span>
+			<span class="locked-saved hidden"><?php _e('Your latest changes were saved as a revision.'); ?></span>
+			</p>
+			<?php do_action( 'post_lock_text', $post ); ?>
+			<p><a class="button button-primary wp-tab-last" href="<?php echo esc_url( $sendback ); ?>"><?php echo $sendback_text; ?></a></p>
 		</div>
 		<?php
 	}
@@ -1278,17 +1319,6 @@ function wp_create_post_autosave( $post_id ) {
 		$new_autosave = _wp_post_revision_fields( $_POST, true );
 		$new_autosave['ID'] = $old_autosave->ID;
 		$new_autosave['post_author'] = $post_author;
-
-		// Auto-save revisioned meta fields too.
-		foreach ( _wp_post_revision_meta_keys() as $meta_key ) {
-			if ( ! isset( $_POST[ $meta_key ] ) )
-				continue;
-
-			// Use the underlying delete_metadata and add_metadata vs delete_post_meta
-			// and add_post_meta to make sure we're working with the actual revision meta.
-			delete_metadata( 'post', $new_autosave['ID'], $meta_key );
-			add_metadata( 'post', $new_autosave['ID'], $meta_key, $_POST[ $meta_key ] );
-		}
 
 		return wp_update_post( $new_autosave );
 	}
@@ -1337,15 +1367,16 @@ function post_preview() {
 	$post = get_post($post_ID);
 
 	if ( 'page' == $post->post_type ) {
-		if ( !current_user_can('edit_page', $post_ID) )
-			wp_die(__('You are not allowed to edit this page.'));
+		if ( ! current_user_can('edit_page', $post_ID) )
+			wp_die( __('You are not allowed to edit this page.') );
 	} else {
-		if ( !current_user_can('edit_post', $post_ID) )
-			wp_die(__('You are not allowed to edit this post.'));
+		if ( ! current_user_can('edit_post', $post_ID) )
+			wp_die( __('You are not allowed to edit this post.') );
 	}
 
 	$user_id = get_current_user_id();
-	if ( 'draft' == $post->post_status && $user_id == $post->post_author ) {
+	$locked = wp_check_post_lock( $post->ID );
+	if ( ! $locked && 'draft' == $post->post_status && $user_id == $post->post_author ) {
 		$id = edit_post();
 	} else { // Non drafts are not overwritten. The autosave is stored in a special post revision.
 		$id = wp_create_post_autosave( $post->ID );
@@ -1356,11 +1387,20 @@ function post_preview() {
 	if ( is_wp_error($id) )
 		wp_die( $id->get_error_message() );
 
-	if ( $_POST['post_status'] == 'draft' && $user_id == $post->post_author ) {
+	if ( ! $locked && $_POST['post_status'] == 'draft' && $user_id == $post->post_author ) {
 		$url = add_query_arg( 'preview', 'true', get_permalink($id) );
 	} else {
 		$nonce = wp_create_nonce('post_preview_' . $id);
-		$url = add_query_arg( array( 'preview' => 'true', 'preview_id' => $id, 'preview_nonce' => $nonce ), get_permalink($id) );
+		$args = array(
+			'preview' => 'true',
+			'preview_id' => $id,
+			'preview_nonce' => $nonce,
+		);
+
+		if ( isset( $_POST['post_format'] ) )
+			$args['post_format'] = empty( $_POST['post_format'] ) ? 'standard' : sanitize_key( $_POST['post_format'] );
+
+		$url = add_query_arg( $args, get_permalink($id) );
 	}
 
 	return apply_filters( 'preview_post_link', $url );

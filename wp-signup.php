@@ -288,9 +288,9 @@ function validate_another_blog_signup() {
  * @param string $path The site root path
  * @param string $user_name The username
  * @param string $user_email The user's email address
- * @param string $meta Any additional meta from the 'add_signup_meta' filter in validate_blog_signup()
+ * @param array $meta Any additional meta from the 'add_signup_meta' filter in validate_blog_signup()
  */
-function confirm_another_blog_signup($domain, $path, $blog_title, $user_name, $user_email = '', $meta = '') {
+function confirm_another_blog_signup( $domain, $path, $blog_title, $user_name, $user_email = '', $meta = array() ) {
 	?>
 	<h2><?php printf( __( 'The site %s is yours.' ), "<a href='http://{$domain}{$path}'>{$blog_title}</a>" ) ?></h2>
 	<p>
@@ -488,9 +488,9 @@ function validate_blog_signup() {
  * @param string $blog_title The new site title
  * @param string $user_name The user's username
  * @param string $user_email The user's email address
- * @param string $meta Any additional meta from the 'add_signup_meta' filter in validate_blog_signup()
+ * @param array $meta Any additional meta from the 'add_signup_meta' filter in validate_blog_signup()
  */
-function confirm_blog_signup($domain, $path, $blog_title, $user_name = '', $user_email = '', $meta) {
+function confirm_blog_signup( $domain, $path, $blog_title, $user_name = '', $user_email = '', $meta = array() ) {
 	?>
 	<h2><?php printf( __( 'Congratulations! Your new site, %s, is almost ready.' ), "<a href='http://{$domain}{$path}'>{$blog_title}</a>" ) ?></h2>
 
@@ -503,7 +503,7 @@ function confirm_blog_signup($domain, $path, $blog_title, $user_name = '', $user
 		<ul id="noemail-tips">
 			<li><p><strong><?php _e( 'Wait a little longer. Sometimes delivery of email can be delayed by processes outside of our control.' ) ?></strong></p></li>
 			<li><p><?php _e( 'Check the junk or spam folder of your email client. Sometime emails wind up there by mistake.' ) ?></p></li>
-			<li><?php printf( __( 'Have you entered your email correctly?  You have entered %s, if it&#8217;s incorrect, you will not receive your email.' ), $user_email ) ?></li>
+			<li><?php printf( __( 'Have you entered your email correctly? You have entered %s, if it&#8217;s incorrect, you will not receive your email.' ), $user_email ) ?></li>
 		</ul>
 	</p>
 	<?php
@@ -569,9 +569,9 @@ if ( $active_signup == 'none' ) {
 				$newblog = get_blogaddress_by_name( $newblogname );
 
 				if ( $active_signup == 'blog' || $active_signup == 'all' )
-					printf( __( '<p><em>The site you were looking for, <strong>%s</strong> does not exist, but you can create it now!</em></p>' ), $newblog );
+					printf( '<p><em>' . __( 'The site you were looking for, <strong>%s</strong>, does not exist, but you can create it now!' ) . '</em></p>', $newblog );
 				else
-					printf( __( '<p><em>The site you were looking for, <strong>%s</strong>, does not exist.</em></p>' ), $newblog );
+					printf( '<p><em>' . __( 'The site you were looking for, <strong>%s</strong>, does not exist.' ) . '</em></p>', $newblog );
 			}
 			break;
 	}

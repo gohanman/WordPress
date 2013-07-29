@@ -148,7 +148,6 @@ function screen_icon( $screen = '' ) {
  * @return string HTML for the screen icon.
  */
 function get_screen_icon( $screen = '' ) {
-	global $post_ID;
 	if ( empty( $screen ) )
 		$screen = get_current_screen();
 	elseif ( is_string( $screen ) )
@@ -167,12 +166,6 @@ function get_screen_icon( $screen = '' ) {
 
 		if ( $screen->post_type )
 			$class .= ' ' . sanitize_html_class( 'icon32-posts-' . $screen->post_type );
-
-		if ( $post_ID ) {
-			$format = get_post_format( $post_ID );
-			if ( $format )
-				$class .= ' ' . $format;
-		}
 	}
 
 	return '<div id="icon-' . esc_attr( $icon_id ) . '" class="' . $class . '"><br /></div>';
@@ -934,6 +927,7 @@ final class WP_Screen {
 
 		$columns = get_column_headers( $this );
 		$hidden  = get_hidden_columns( $this );
+		$post    = get_post();
 
 		?>
 		<div id="screen-options-wrap" class="hidden" tabindex="-1" aria-label="<?php esc_attr_e('Screen Options Tab'); ?>">
