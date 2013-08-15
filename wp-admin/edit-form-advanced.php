@@ -122,7 +122,7 @@ if ( post_type_supports($post_type, 'revisions') && 'auto-draft' != $post->post_
 	if ( count( $revisions ) > 1 ) {
 		reset( $revisions ); // Reset pointer for key()
 		$publish_callback_args = array( 'revisions_count' => count( $revisions ), 'revision_id' => key( $revisions ) );
-		// add_meta_box('revisionsdiv', __('Revisions'), 'post_revisions_meta_box', null, 'normal', 'core');
+		add_meta_box('revisionsdiv', __('Revisions'), 'post_revisions_meta_box', null, 'normal', 'core');
 	}
 }
 
@@ -351,6 +351,8 @@ wp_nonce_field( 'autosave', 'autosavenonce', false );
 wp_nonce_field( 'meta-box-order', 'meta-box-order-nonce', false );
 wp_nonce_field( 'closedpostboxes', 'closedpostboxesnonce', false );
 ?>
+
+<?php do_action( 'edit_form_top', $post ); ?>
 
 <div id="poststuff">
 <div id="post-body" class="metabox-holder columns-<?php echo 1 == get_current_screen()->get_columns() ? '1' : '2'; ?>">

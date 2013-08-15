@@ -167,8 +167,9 @@ add_action( 'init', 'create_initial_post_types', 0 ); // highest priority
 /**
  * Retrieve attached file path based on attachment ID.
  *
- * You can optionally send it through the 'get_attached_file' filter, but by
- * default it will just return the file path unfiltered.
+ * By default the path will go through the 'get_attached_file' filter, but
+ * passing a true to the $unfiltered argument of get_attached_file() will
+ * return the file path unfiltered.
  *
  * The function works by getting the single post meta name, named
  * '_wp_attached_file' and returning it. This is a convenience function to
@@ -1270,7 +1271,9 @@ function register_post_type( $post_type, $args = array() ) {
 				add_rewrite_rule( "{$archive_slug}/{$wp_rewrite->pagination_base}/([0-9]{1,})/?$", "index.php?post_type=$post_type" . '&paged=$matches[1]', 'top' );
 		}
 
-		add_permastruct( $post_type, "{$args->rewrite['slug']}/%$post_type%", $args->rewrite );
+		$permastruct_args = $args->rewrite;
+		$permastruct_args['feed'] = $permastruct_args['feeds'];
+		add_permastruct( $post_type, "{$args->rewrite['slug']}/%$post_type%", $permastruct_args );
 	}
 
 	if ( $args->register_meta_box_cb )
@@ -2967,8 +2970,8 @@ function wp_publish_post( $post ) {
 	wp_transition_post_status( 'publish', $old_status, $post );
 
 	do_action( 'edit_post', $post->ID, $post );
-	do_action( 'save_post', $post->ID, $post );
-	do_action( 'wp_insert_post', $post->ID, $post );
+	do_action( 'save_post', $post->ID, $post, true );
+	do_action( 'wp_insert_post', $post->ID, $post, true );
 }
 
 /**
