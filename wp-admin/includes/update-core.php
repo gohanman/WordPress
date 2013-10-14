@@ -554,6 +554,13 @@ $_old_files = array(
 // 3.6
 'wp-admin/js/revisions-js.php',
 'wp-admin/images/screenshots',
+'wp-admin/js/categories.js',
+'wp-admin/js/categories.min.js',
+'wp-admin/js/custom-fields.js',
+'wp-admin/js/custom-fields.min.js',
+// 3.7
+'wp-admin/js/cat.js',
+'wp-admin/js/cat.min.js',
 );
 
 /**
@@ -654,11 +661,11 @@ function update_core($from, $to) {
 	$versions_file = trailingslashit( $wp_filesystem->wp_content_dir() ) . 'upgrade/version-current.php';
 	if ( ! $wp_filesystem->copy( $from . $distro . 'wp-includes/version.php', $versions_file ) ) {
 		 $wp_filesystem->delete( $from, true );
-		 return new WP_Error( 'copy_failed', __('Could not copy file.') );
+		 return new WP_Error( 'copy_failed_for_version_file', __( 'Could not copy file.' ) );
 	}
 
 	$wp_filesystem->chmod( $versions_file, FS_CHMOD_FILE );
-	require_once( WP_CONTENT_DIR . '/upgrade/version-current.php' );
+	require( WP_CONTENT_DIR . '/upgrade/version-current.php' );
 	$wp_filesystem->delete( $versions_file );
 
 	$php_version    = phpversion();
@@ -681,16 +688,67 @@ function update_core($from, $to) {
 	elseif ( !$mysql_compat )
 		return new WP_Error( 'mysql_not_compatible', sprintf( __('The update cannot be installed because WordPress %1$s requires MySQL version %2$s or higher. You are running version %3$s.'), $wp_version, $required_mysql_version, $mysql_version ) );
 
-	apply_filters('update_feedback', __('Installing the latest version&#8230;'));
+	apply_filters( 'update_feedback', __( 'Preparing to install the latest version&#8230;' ) );
 
+	// Don't copy wp-content, we'll deal with that below
+	$skip = array( 'wp-content' );
+
+	// Check to see which files don't really need updating - only available for 3.7 and higher
+	if ( function_exists( 'get_core_checksums' ) ) {
+		$checksums = get_core_checksums( $wp_version );
+		if ( ! empty( $checksums[ $wp_version ] ) && is_array( $checksums[ $wp_version ] ) ) {
+			foreach( $checksums[ $wp_version ] as $file => $checksum ) {
+				if ( 'wp-content' == substr( $file, 0, 10 ) )
+					continue;
+				if ( file_exists( ABSPATH . $file ) && md5_file( ABSPATH . $file ) === $checksum )
+					$skip[] = $file;
+			}
+		}
+	}
+
+	apply_filters( 'update_feedback', __( 'Enabling Maintenance mode&#8230;' ) );
 	// Create maintenance file to signal that we are upgrading
 	$maintenance_string = '<?php $upgrading = ' . time() . '; ?>';
 	$maintenance_file = $to . '.maintenance';
 	$wp_filesystem->delete($maintenance_file);
 	$wp_filesystem->put_contents($maintenance_file, $maintenance_string, FS_CHMOD_FILE);
 
+	apply_filters( 'update_feedback', __( 'Copying the required files&#8230;' ) );
 	// Copy new versions of WP files into place.
-	$result = _copy_dir($from . $distro, $to, array('wp-content') );
+	$result = _copy_dir( $from . $distro, $to, $skip );
+
+	// Check to make sure everything copied correctly, ignoring the contents of wp-content
+	$skip = array( 'wp-content' );
+	$failed = array();
+	if ( ! empty( $checksums[ $wp_version ] ) && is_array( $checksums[ $wp_version ] ) ) {
+		foreach ( $checksums[ $wp_version ] as $file => $checksum ) {
+			if ( 0 === strpos( $file, 'wp-content' ) )
+				continue;
+
+			if ( md5_file( ABSPATH . $file ) == $checksum )
+				$skip[] = $file;
+			else
+				$failed[] = $file;
+		}
+	}
+
+	// Some files didn't copy properly
+	if ( ! empty( $failed ) ) {
+		$total_size = 0;
+		// Find the local version of the working directory
+		$working_dir_local = str_replace( trailingslashit( $wp_filesystem->wp_content_dir() ), trailingslashit( WP_CONTENT_DIR ), $from . $distro );
+		foreach ( $failed as $file )
+			$total_size += filesize( $working_dir_local . '/' . $file ); 
+
+		// If we don't have enough free space, it isn't worth trying again
+		if ( $total_size >= disk_free_space( ABSPATH ) ) {
+			$result = new WP_Error( 'disk_full', __( 'There is not enough free disk space to complete the update.' ), $to );
+		} else {
+			$result = _copy_dir( $from . $distro, $to, $skip );
+			if ( is_wp_error( $result ) )
+				$result = new WP_Error( $result->get_error_code() . '_retry', $result->get_error_message(), $result->get_error_data() );
+		}
+	}
 
 	// Custom Content Directory needs updating now.
 	// Copy Languages
@@ -745,7 +803,7 @@ function update_core($from, $to) {
 						continue;
 
 					if ( ! $wp_filesystem->copy($from . $distro . 'wp-content/' . $file, $dest . $filename, FS_CHMOD_FILE) )
-						$result = new WP_Error('copy_failed', __('Could not copy file.'), $dest . $filename);
+						$result = new WP_Error( 'copy_failed_for_new_bundled', __( 'Could not copy file.' ), $dest . $filename );
 				} else {
 					if ( ! $development_build && $wp_filesystem->is_dir( $dest . $filename ) )
 						continue;
@@ -788,6 +846,7 @@ function update_core($from, $to) {
 	else
 		delete_option('update_core');
 
+	apply_filters( 'update_feedback', __( 'Disabling Maintenance mode&#8230;' ) );
 	// Remove maintenance file, we're done.
 	$wp_filesystem->delete($maintenance_file);
 
@@ -801,10 +860,12 @@ function update_core($from, $to) {
  * Copies a directory from one location to another via the WordPress Filesystem Abstraction.
  * Assumes that WP_Filesystem() has already been called and setup.
  *
- * This is a temporary function for the 3.1 -> 3.2 upgrade only and will be removed in 3.3
+ * This is a temporary function for the 3.1 -> 3.2 upgrade, as well as for those upgrading to
+ * 3.7+
  *
  * @ignore
  * @since 3.2.0
+ * @since 3.7.0 Updated not to use a regular expression for the skip list
  * @see copy_dir()
  *
  * @param string $from source directory
@@ -820,31 +881,31 @@ function _copy_dir($from, $to, $skip_list = array() ) {
 	$from = trailingslashit($from);
 	$to = trailingslashit($to);
 
-	$skip_regex = '';
-	foreach ( (array)$skip_list as $key => $skip_file )
-		$skip_regex .= preg_quote($skip_file, '!') . '|';
-
-	if ( !empty($skip_regex) )
-		$skip_regex = '!(' . rtrim($skip_regex, '|') . ')$!i';
-
 	foreach ( (array) $dirlist as $filename => $fileinfo ) {
-		if ( !empty($skip_regex) )
-			if ( preg_match($skip_regex, $from . $filename) )
-				continue;
+		if ( in_array( $filename, $skip_list ) )
+			continue;
 
 		if ( 'f' == $fileinfo['type'] ) {
 			if ( ! $wp_filesystem->copy($from . $filename, $to . $filename, true, FS_CHMOD_FILE) ) {
 				// If copy failed, chmod file to 0644 and try again.
 				$wp_filesystem->chmod($to . $filename, 0644);
 				if ( ! $wp_filesystem->copy($from . $filename, $to . $filename, true, FS_CHMOD_FILE) )
-					return new WP_Error('copy_failed', __('Could not copy file.'), $to . $filename);
+					return new WP_Error( 'copy_failed__copy_dir', __( 'Could not copy file.' ), $to . $filename );
 			}
 		} elseif ( 'd' == $fileinfo['type'] ) {
 			if ( !$wp_filesystem->is_dir($to . $filename) ) {
 				if ( !$wp_filesystem->mkdir($to . $filename, FS_CHMOD_DIR) )
-					return new WP_Error('mkdir_failed', __('Could not create directory.'), $to . $filename);
+					return new WP_Error( 'mkdir_failed__copy_dir', __( 'Could not create directory.' ), $to . $filename );
 			}
-			$result = _copy_dir($from . $filename, $to . $filename, $skip_list);
+
+			// generate the $sub_skip_list for the subdirectory as a sub-set of the existing $skip_list
+			$sub_skip_list = array();
+			foreach ( $skip_list as $skip_item ) {
+				if ( 0 === strpos( $skip_item, $filename . '/' ) )
+					$sub_skip_list[] = preg_replace( '!^' . preg_quote( $filename, '!' ) . '/!i', '', $skip_item );
+			}
+
+			$result = _copy_dir($from . $filename, $to . $filename, $sub_skip_list);
 			if ( is_wp_error($result) )
 				return $result;
 		}
@@ -866,7 +927,7 @@ function _redirect_to_about_wordpress( $new_version ) {
 	if ( version_compare( $wp_version, '3.4-RC1', '>=' ) )
 		return;
 
-	// Ensure we only run this on the update-core.php page. wp_update_core() could be called in other contexts.
+	// Ensure we only run this on the update-core.php page. The Core_Upgrader may be used in other contexts.
 	if ( 'update-core.php' != $pagenow )
 		return;
 
