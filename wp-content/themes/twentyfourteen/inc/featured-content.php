@@ -30,7 +30,7 @@ class Featured_Content {
 	 * All custom functionality will be hooked into the "init" action.
 	 */
 	public static function setup() {
-		add_action( 'init', array( __class__, 'init' ), 30 );
+		add_action( 'init', array( __CLASS__, 'init' ), 30 );
 	}
 
 	/**
@@ -308,8 +308,8 @@ class Featured_Content {
 	 * @return void
 	 */
 	public static function register_setting() {
-		add_settings_field( 'featured-content', __( 'Featured content', 'twentyfourteen' ), array( __class__, 'render_form' ), 'reading' );
-		register_setting( 'reading', 'featured-content', array( __class__, 'validate_settings' ) );
+		add_settings_field( 'featured-content', __( 'Featured content', 'twentyfourteen' ), array( __CLASS__, 'render_form' ), 'reading' );
+		register_setting( 'reading', 'featured-content', array( __CLASS__, 'validate_settings' ) );
 	}
 
 	/**
@@ -326,6 +326,8 @@ class Featured_Content {
 			if ( ! is_wp_error( $tag ) && isset( $tag->name ) )
 				$tag_name = $tag->name;
 		}
+
+		wp_enqueue_script( 'twentyfourteen-admin', get_template_directory_uri() . '/js/featured-content-admin.js', array( 'jquery', 'suggest' ), '20131016', true );
 		?>
 		<div id="featured-content-ui">
 			<p>
@@ -338,7 +340,7 @@ class Featured_Content {
 				<input class="small-text" type="number" step="1" min="1" max="<?php echo esc_attr( self::$max_posts ); ?>" id="featured-content-quantity" name="featured-content[quantity]" value="<?php echo esc_attr( $settings['quantity'] ); ?>">
 			</p>
 			<p>
-				<input type="checkbox" id="featured-content-hide-tag" name="featured-content[hide-tag]" <?php checked( $settings['hide-tag'], 1 ); ?>">
+				<input type="checkbox" id="featured-content-hide-tag" name="featured-content[hide-tag]" <?php checked( $settings['hide-tag'], 1 ); ?>>
 				<label for="featured-content-hide-tag"><?php _e( 'Hide tag from displaying in post meta and tag clouds.', 'twentyfourteen' ); ?></label>
 			</p>
 		</div>
