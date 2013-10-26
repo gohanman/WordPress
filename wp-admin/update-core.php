@@ -24,7 +24,7 @@ if ( ! current_user_can( 'update_core' ) && ! current_user_can( 'update_themes' 
 function list_core_update( $update ) {
  	global $wp_local_package, $wpdb, $wp_version;
   	static $first_pass = true;
-  
+
  	if ( 'en_US' == $update->locale && 'en_US' == get_locale() )
  		$version_string = $update->current;
  	// If the only available update is a partial builds, it doesn't need a language-specific version string.
@@ -32,7 +32,7 @@ function list_core_update( $update ) {
  		$version_string = $update->current;
  	else
  		$version_string = sprintf( "%s&ndash;<strong>%s</strong>", $update->current, $update->locale );
-  
+
 	$current = false;
 	if ( !isset($update->response) || 'latest' == $update->response )
 		$current = true;
@@ -46,7 +46,7 @@ function list_core_update( $update ) {
 		$download = __('Download nightly build');
 	} else {
 		if ( $current ) {
-			$message = sprintf(__('You have the latest version of WordPress. You do not need to update. However, if you want to re-install version %s, you can do so automatically or download the package and re-install manually:'), $version_string);
+			$message = sprintf( __( 'If you need to re-install version %s, you can do so here or download the package and re-install manually:' ), $version_string );
 			$submit = __('Re-install Now');
 			$form_action = 'update-core.php?action=do-core-reinstall';
 		} else {
@@ -138,13 +138,27 @@ function dismissed_updates() {
  * @return null
  */
 function core_upgrade_preamble() {
-	global $wp_version;
+	global $wp_version, $required_php_version, $required_mysql_version;
 
 	$updates = get_core_updates();
 
 	if ( !isset($updates[0]->response) || 'latest' == $updates[0]->response ) {
 		echo '<h3>';
 		_e('You have the latest version of WordPress.');
+
+		if ( wp_http_supports( 'ssl' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+			$upgrader = new WP_Automatic_Updater;
+			$future_minor_update = (object) array(
+				'current'       => $wp_version . '.1.next.minor',
+				'version'       => $wp_version . '.1.next.minor',
+				'php_version'   => $required_php_version,
+				'mysql_version' => $required_mysql_version,
+			);
+			$should_auto_update = $upgrader->should_update( 'core', $future_minor_update, ABSPATH );
+			if ( $should_auto_update )
+				echo ' ' . __( 'Future security updates will be applied automatically.' );
+		}
 		echo '</h3>';
 	} else {
 		echo '<div class="updated inline"><p>';
@@ -156,21 +170,11 @@ function core_upgrade_preamble() {
 		echo '</h3>';
 	}
 
-	// This is temporary, for the WordPress 3.7 beta period.
 	if ( isset( $updates[0] ) && $updates[0]->response == 'development' ) {
-		require ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-		$ssl_support = wp_http_supports( 'ssl' );
-		$should_auto_update = WP_Automatic_Upgrader::should_auto_update( 'core', $updates[0], ABSPATH );
-		if ( $ssl_support && $should_auto_update ) {
-			echo '<div class="updated inline"><p><strong>BETA TESTERS: This install will receive daily auto updates to future beta versions.</strong>';
-			if ( get_locale() !== 'en_US' )
-				echo ' Translations of importers and default themes will also be updated.';
-			echo '</p><p>You will receive an email with debugging output after each update. If something goes wrong, please <a href="http://wordpress.org/support/forum/alphabeta">post in the support forums</a> or <a href="https://core.trac.wordpress.org/">open a bug report</a>.</div>';
-		} elseif ( ! $ssl_support ) {
-			echo '<div class="error inline"><p><strong>BETA TESTERS:</strong> Your server does not support HTTP requests over SSL. This install will not receive auto updates.</p></div>';
-		} elseif ( WP_Automatic_Upgrader::is_vcs_checkout( ABSPATH ) ) {
-			echo '<div class="error inline"><p><strong>BETA TESTERS:</strong> This install uses version control (SVN or Git) and thus will not receive auto updates. Try a separate install of WordPress with the <a href="http://wordpress.org/plugins/wordpress-beta-tester/">Beta Tester</a> plugin set to bleeding edge.</p></div>';
-		}
+		require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+		$upgrader = new WP_Automatic_Updater;
+		if ( wp_http_supports( 'ssl' ) && $upgrader->should_update( 'core', $updates[0], ABSPATH ) )
+			echo '<div class="updated inline"><p><strong>BETA TESTERS:</strong> This site is set up to install updates of future beta versions automatically.</p></div>';
 	}
 
 	echo '<ul class="core-updates">';
@@ -181,9 +185,10 @@ function core_upgrade_preamble() {
 		echo '</li>';
 	}
 	echo '</ul>';
-	if ( $updates ) {
+	// Don't show the maintenance mode notice when we are only showing a single re-install option.
+	if ( $updates && ( count( $updates ) > 1 || $updates[0]->response != 'latest' ) ) {
 		echo '<p>' . __( 'While your site is being updated, it will be in maintenance mode. As soon as your updates are complete, your site will return to normal.' ) . '</p>';
-	} else {
+	} elseif ( ! $updates ) {
 		list( $normalized_version ) = explode( '-', $wp_version );
 		echo '<p>' . sprintf( __( '<a href="%s">Learn more about WordPress %s</a>.' ), esc_url( self_admin_url( 'about.php' ) ), $normalized_version ) . '</p>';
 	}
