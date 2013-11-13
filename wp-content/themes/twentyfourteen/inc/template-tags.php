@@ -159,30 +159,36 @@ add_action( 'edit_category', 'twentyfourteen_category_transient_flusher' );
 add_action( 'save_post',     'twentyfourteen_category_transient_flusher' );
 
 /**
- * Displays an optional featured image, with an anchor element
+ * Displays an optional post thumbnail, with an anchor element
  * when on index views, and a div element when on a single view.
  *
  * @return void
 */
 function twentyfourteen_post_thumbnail() {
-	if ( post_password_required() )
+	if ( post_password_required() || ! has_post_thumbnail() )
 		return;
 
 	if ( is_singular() ) :
 	?>
 
-	<div class="featured-thumbnail">
-		<?php the_post_thumbnail( 'featured-thumbnail-large' ); ?>
+	<div class="post-thumbnail">
+	<?php
+		if ( ( ! is_active_sidebar( 'sidebar-2' ) || is_page_template( 'page-templates/full-width.php' ) ) && ! wp_is_mobile() )
+			the_post_thumbnail( 'post-thumbnail-full-width' );
+		else
+			the_post_thumbnail( 'post-thumbnail' );
+	?>
 	</div>
 
 	<?php else : ?>
 
-	<a class="featured-thumbnail" href="<?php the_permalink(); ?>" rel="<?php the_ID(); ?>">
-	<?php if ( has_post_thumbnail() ) :
-		the_post_thumbnail( 'featured-thumbnail-large' );
-	else : ?>
-		<p class="screen-reader-text"><?php _e( 'No featured image.', 'twentyfourteen' ); ?></p>
-	<?php endif; ?>
+	<a class="post-thumbnail" href="<?php the_permalink(); ?>" rel="<?php the_ID(); ?>">
+	<?php
+		if ( ( ! is_active_sidebar( 'sidebar-2' ) || is_page_template( 'page-templates/full-width.php' ) ) && ! wp_is_mobile() )
+			the_post_thumbnail( 'post-thumbnail-full-width' );
+		else
+			the_post_thumbnail( 'post-thumbnail' );
+	?>
 	</a>
 
 	<?php endif; // End is_singular()

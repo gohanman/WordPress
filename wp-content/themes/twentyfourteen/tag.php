@@ -13,13 +13,14 @@
 
 get_header(); ?>
 
+<div id="main-content" class="main-content">
 	<section id="primary" class="content-area">
 		<div id="content" class="site-content" role="main">
 
 			<?php if ( have_posts() ) : ?>
 
 			<header class="archive-header">
-				<h1 class="archive-title"><?php single_tag_title();; ?></h1>
+				<h1 class="archive-title"><?php single_tag_title(); ?></h1>
 
 				<?php
 					// Show an optional term description.
@@ -45,8 +46,9 @@ get_header(); ?>
 			?>
 		</div><!-- #content -->
 	</section><!-- #primary -->
+	<?php get_sidebar( 'content' ); ?>
+</div><!-- #main-content -->
 
 <?php
-get_sidebar( 'content' );
 get_sidebar();
 get_footer();

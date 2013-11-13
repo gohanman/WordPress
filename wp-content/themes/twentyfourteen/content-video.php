@@ -43,7 +43,7 @@
 
 	<div class="entry-content">
 		<?php
-			the_content();
+			the_content( __( 'Continue reading <span class="meta-nav">&rarr;</span>', 'twentyfourteen' ) );
 			wp_link_pages( array(
 				'before'      => '<div class="page-links"><span class="page-links-title">' . __( 'Pages:', 'twentyfourteen' ) . '</span>',
 				'after'       => '</div>',
@@ -53,11 +53,8 @@
 		?>
 	</div><!-- .entry-content -->
 
-	<?php if ( has_tag() ) : ?>
-	<footer class="entry-meta">
-		<span class="tag-links">
-			<?php echo get_the_tag_list(); ?>
-		</span>
-	</footer><!-- .entry-meta -->
-	<?php endif; ?>
+	<?php
+		if ( has_tag() )
+			echo get_the_tag_list( '<footer class="entry-meta"><span class="tag-links">', '', '</span></footer>' );
+	?>
 </article><!-- #post-## -->

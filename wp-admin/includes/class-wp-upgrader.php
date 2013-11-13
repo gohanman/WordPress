@@ -408,7 +408,6 @@ class Plugin_Upgrader extends WP_Upgrader {
 
 	var $result;
 	var $bulk = false;
-	var $show_before = '';
 
 	function upgrade_strings() {
 		$this->strings['up_to_date'] = __('The plugin is at the latest version.');
@@ -979,7 +978,7 @@ class Theme_Upgrader extends WP_Upgrader {
 
 		do_action( 'upgrader_process_complete', $this, array(
 			'action' => 'update',
-			'type' => 'plugin',
+			'type' => 'theme',
 			'bulk' => true,
 			'themes' => $themes,
 		) );
@@ -1314,7 +1313,9 @@ class Core_Upgrader extends WP_Upgrader {
 	}
 
 	function upgrade( $current, $args = array() ) {
-		global $wp_filesystem, $wp_version;
+		global $wp_filesystem;
+
+		include ABSPATH . WPINC . '/version.php'; // $wp_version;
 
 		$start_time = time();
 
@@ -1421,6 +1422,7 @@ class Core_Upgrader extends WP_Upgrader {
 				'fs_method'        => $wp_filesystem->method,
 				'fs_method_forced' => defined( 'FS_METHOD' ) || has_filter( 'filesystem_method' ),
 				'time_taken'       => time() - $start_time,
+				'reported'         => $wp_version,
 				'attempted'        => $current->version,
 			);
 
@@ -2135,7 +2137,7 @@ class WP_Automatic_Updater {
 		// If the update transient is empty, use the update we just performed
 		if ( ! $next_user_core_update )
 			$next_user_core_update = $core_update;
-		$newer_version_available = ( 'upgrade' == $next_user_core_update->response && version_compare( $next_user_core_update->version, $core_update, '>' ) );
+		$newer_version_available = ( 'upgrade' == $next_user_core_update->response && version_compare( $next_user_core_update->version, $core_update->version, '>' ) );
 
 		/**
 		 * Filter whether to send an email following an automatic background core update.
@@ -2393,9 +2395,31 @@ class WP_Automatic_Updater {
 			}
 		}
 
-		//echo "<h1>\n$subject\n</h1>\n";
-		//echo "<pre>\n" . implode( "\n", $body ) . "\n</pre>";
+		$email = array(
+			'to'      => get_site_option( 'admin_email' ),
+			'subject' => $subject,
+			'body'    => implode( "\n", $body ),
+			'headers' => ''
+		);
 
-		wp_mail( get_site_option( 'admin_email' ), $subject, implode( "\n", $body ) );
+		/**
+		 * Filter the debug email that can be sent following an automatic background core update.
+		 *
+		 * @since 3.8.0
+		 *
+		 * @param array $email {
+		 *     Array of email arguments that will be passed to wp_mail().
+		 *
+		 *     @type string $to      The email recipient. An array of emails can be returned, as handled by wp_mail().
+		 *     @type string $subject The email's subject.
+		 *     @type string $body    The email message body.
+		 *     @type string $headers Any email headers, defaults to no headers.
+		 * }
+		 * @param int   $failures The number of failures encountered while upgrading
+		 * @param mixed $results  The results of all updates attempted
+		 */
+		$email = apply_filters( 'automatic_updates_debug_email', $email, $failures, $this->update_results );
+
+		wp_mail( $email['to'], $email['subject'], $email['body'], $email['headers'] );
 	}
 }

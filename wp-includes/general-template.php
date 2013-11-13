@@ -1785,7 +1785,7 @@ function noindex() {
  * @since 3.3.0
  */
 function wp_no_robots() {
-	echo "<meta name='robots' content='noindex,nofollow' />\n";
+	echo "<meta name='robots' content='noindex,follow' />\n";
 }
 
 /**
@@ -2085,14 +2085,20 @@ function paginate_links( $args = '' ) {
  * @param string $name The name of the theme.
  * @param string $url The url of the css file containing the colour scheme.
  * @param array $colors Optional An array of CSS color definitions which are used to give the user a feel for the theme.
+ * @param array $icons Optional An array of CSS color definitions used to color any SVG icons
  */
-function wp_admin_css_color($key, $name, $url, $colors = array()) {
+function wp_admin_css_color( $key, $name, $url, $colors = array(), $icons = array() ) {
 	global $_wp_admin_css_colors;
 
 	if ( !isset($_wp_admin_css_colors) )
 		$_wp_admin_css_colors = array();
 
-	$_wp_admin_css_colors[$key] = (object) array('name' => $name, 'url' => $url, 'colors' => $colors);
+	$_wp_admin_css_colors[$key] = (object) array(
+		'name' => $name,
+		'url' => $url,
+		'colors' => $colors,
+		'icon_colors' => $icons,
+	);
 }
 
 /**
@@ -2101,10 +2107,33 @@ function wp_admin_css_color($key, $name, $url, $colors = array()) {
  * @since 3.0.0
  */
 function register_admin_color_schemes() {
-	wp_admin_css_color( 'classic', _x( 'Blue', 'admin color scheme' ), admin_url( 'css/colors-classic.min.css' ),
-		array( '#5589aa', '#cfdfe9', '#d1e5ee', '#eff8ff' ) );
-	wp_admin_css_color( 'fresh', _x( 'Gray', 'admin color scheme' ), admin_url( 'css/colors-fresh.min.css' ),
-		array( '#555', '#a0a0a0', '#ccc', '#f1f1f1' ) );
+	$suffix = SCRIPT_DEBUG ? '' : '.min';
+
+	wp_admin_css_color( 'fresh', _x( 'Default', 'admin color scheme' ),
+		admin_url( "css/colors-fresh$suffix.css" ),
+		array( '#222', '#333', '#0074a2', '#2ea2cc' )
+	);
+
+	// Other color schemes are not available when running out of src
+	if ( ! strpos( $GLOBALS['wp_version'], '-src' ) ) {
+		wp_admin_css_color( 'light', _x( 'Light', 'admin color scheme' ),
+			admin_url( "css/color-schemes/light/colors$suffix.css" ),
+			array( '#e5e5e5', '#999', '#d64e07', '#04a4cc' ),
+			array( 'base' => '#999', 'focus' => '#ccc', 'current' => '#ccc' )
+		);
+
+		wp_admin_css_color( 'blue', _x( 'Blue', 'admin color scheme' ),
+			admin_url( "css/color-schemes/blue/colors$suffix.css" ),
+			array( '#096484', '#4796b3', '#52accc', '#74B6CE' ),
+			array( 'base' => '#e5f8ff', 'focus' => '#fff', 'current' => '#fff' )
+		);
+
+		wp_admin_css_color( 'midnight', _x( 'Midnight', 'admin color scheme' ),
+			admin_url( "css/color-schemes/midnight/colors$suffix.css" ),
+			array( '#25282b', '#363b3f', '#69a8bb', '#e14d43' ),
+			array( 'base' => '#f1f2f3', 'focus' => '#fff', 'current' => '#fff' )
+		);
+	}
 }
 
 /**

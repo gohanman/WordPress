@@ -19,17 +19,45 @@ function twentyfourteen_customize_register( $wp_customize ) {
 	$wp_customize->get_setting( 'blogname' )->transport        = 'postMessage';
 	$wp_customize->get_setting( 'blogdescription' )->transport = 'postMessage';
 
+	// Add custom description to Colors and Background sections.
+ 	$wp_customize->get_section( 'colors' )->description           = __( 'Background may only be visible on wide screens.', 'twentyfourteen' );
+ 	$wp_customize->get_section( 'background_image' )->description = __( 'Background may only be visible on wide screens.', 'twentyfourteen' );
+
 	// Add the custom accent color setting and control.
 	$wp_customize->add_setting( 'accent_color', array(
 		'default'           => '#24890d',
-		'sanitize_callback' => 'twentyfourteen_generate_accent_colors',
+		'sanitize_callback' => 'sanitize_hex_color',
 	) );
 
 	$wp_customize->add_control( new WP_Customize_Color_Control( $wp_customize, 'accent_color', array(
 		'label'    => __( 'Accent Color', 'twentyfourteen' ),
 		'section'  => 'colors',
-		'settings' => 'accent_color',
 	) ) );
+
+	add_filter( 'theme_mod_accent_mid',  'twentyfourteen_accent_mid'  );
+	add_filter( 'theme_mod_accent_light', 'twentyfourteen_accent_light' );
+
+	// Add the featured content section in case it's not already there.
+	$wp_customize->add_section( 'featured_content', array(
+		'title'       => __( 'Featured Content', 'twentyfourteen' ),
+		'description' => sprintf( __( 'Easily feature all posts with the <a href="%1$s">"featured" tag</a> or a tag of your choice; if no posts match the tag, <a href="%2$s">"sticky" posts</a> will be displayed instead.', 'twentyfourteen' ), admin_url( '/edit.php?tag=featured' ), admin_url( '/edit.php?show_sticky=1' ) ),
+		'priority'    => 130,
+	) );
+
+	// Add the featured content layout setting and control.
+	$wp_customize->add_setting( 'featured_content_layout', array(
+		'default' => 'grid',
+	) );
+
+	$wp_customize->add_control( 'featured_content_layout', array(
+		'label'   => __( 'Layout', 'twentyfourteen' ),
+		'section' => 'featured_content',
+		'type'    => 'select',
+		'choices' => array(
+			'grid'   => __( 'Grid',   'twentyfourteen' ),
+			'slider' => __( 'Slider', 'twentyfourteen' ),
+		),
+	) );
 }
 add_action( 'customize_register', 'twentyfourteen_customize_register' );
 
@@ -42,24 +70,6 @@ function twentyfourteen_customize_preview_js() {
 	wp_enqueue_script( 'twentyfourteen_customizer', get_template_directory_uri() . '/js/customizer.js', array( 'customize-preview' ), '20120827', true );
 }
 add_action( 'customize_preview_init', 'twentyfourteen_customize_preview_js' );
-
-/**
- * Generate two variants of the accent color, return the original, and
- * save the others as theme mods.
- *
- * @since Twenty Fourteen 1.0
- *
- * @param string $color The original color.
- * @return string $color The original color, sanitized.
- */
-function twentyfourteen_generate_accent_colors( $color ) {
-	$color = sanitize_hex_color( $color );
-
-	set_theme_mod( 'accent_lighter', twentyfourteen_adjust_color( $color, 29 ) );
-	set_theme_mod( 'accent_much_lighter', twentyfourteen_adjust_color( $color, 49 ) );
-
-	return $color;
-}
 
 /**
  * Tweak the brightness of a color by adjusting the RGB values by the given interval.
@@ -83,19 +93,55 @@ function twentyfourteen_adjust_color( $color, $steps ) {
 	// Convert hex to rgb.
 	$rgb = array( hexdec( substr( $color, 1, 2 ) ), hexdec( substr( $color, 3, 2 ) ), hexdec( substr( $color, 5, 2 ) ) );
 
-	// Adjust color and switch back to hex.
+	// Adjust color and switch back to 6-digit hex.
 	$hex = '#';
-	foreach ( $rgb as $c ) {
-		$c += $steps;
-		if ( $c > 255 )
-			$c = 255;
-		elseif ( $c < 0 )
-			$c = 0;
-		$hex .= str_pad( dechex( $c ), 2, '0', STR_PAD_LEFT);
+	foreach ( $rgb as $value ) {
+		$value += $steps;
+		if ( $value > 255 )
+			$value = 255;
+		elseif ( $value < 0 )
+			$value = 0;
+		$hex .= str_pad( dechex( $value ), 2, '0', STR_PAD_LEFT);
 	}
 
 	return $hex;
 }
+
+ /**
+ * Returns a slightly lighter color than what is set as the theme's
+ * accent color.
+ *
+ * @since Twenty Fourteen 1.0
+ *
+ * @return string
+ */
+function twentyfourteen_accent_mid() {
+	return twentyfourteen_adjust_color( get_theme_mod( 'accent_color' ), 29 );
+}
+
+/**
+ * Returns a lighter color than what is set as the theme's accent color.
+ *
+ * @since Twenty Fourteen 1.0
+ *
+ * @return string
+ */
+function twentyfourteen_accent_light() {
+	return twentyfourteen_adjust_color( get_theme_mod( 'accent_color' ), 49 );
+}
+
+/**
+ * Caches the generated variants of the theme's accent color.
+ *
+ * @since Twenty Fourteen 1.0
+ *
+ * @return void
+ */
+function twentyfourteen_rebuild_accent_colors() {
+	set_theme_mod( 'accent_mid',  twentyfourteen_accent_mid()  );
+	set_theme_mod( 'accent_light', twentyfourteen_accent_light() );
+}
+add_action( 'update_option_theme_mods_twentyfourteen', 'twentyfourteen_rebuild_accent_colors' );
 
 /**
  * Output the CSS for the Theme Customizer options.
@@ -105,19 +151,18 @@ function twentyfourteen_adjust_color( $color, $steps ) {
  * @return void
  */
 function twentyfourteen_customizer_styles() {
-	$accent_color = get_theme_mod( 'accent_color' );
+	$accent_color = get_theme_mod( 'accent_color', '#24890d' );
 
 	// Don't do anything if the current color is the default.
 	if ( '#24890d' === $accent_color )
 		return;
 
-	$accent_lighter = get_theme_mod( 'accent_lighter' );
-	$accent_much_lighter = get_theme_mod( 'accent_much_lighter' );
+	$accent_mid = get_theme_mod( 'accent_mid' );
+	$accent_light = get_theme_mod( 'accent_light' );
 
 	$css = '/* Custom accent color. */
 		a,
-		.paging-navigation .page-numbers.current,
-		.content-sidebar .widget_twentyfourteen_ephemera .post-format-archive-link {
+		.content-sidebar .widget a {
 			color: ' . $accent_color . ';
 		}
 
@@ -128,15 +173,18 @@ function twentyfourteen_customizer_styles() {
 		input[type="submit"],
 		.search-toggle,
 		.hentry .mejs-controls .mejs-time-rail .mejs-time-current,
-		.widget_calendar tbody a {
+		.widget button,
+		.widget input[type="button"],
+		.widget input[type="reset"],
+		.widget input[type="submit"],
+		.widget_calendar tbody a,
+		.content-sidebar .widget input[type="button"],
+		.content-sidebar .widget input[type="reset"],
+		.content-sidebar .widget input[type="submit"],
+		.slider-control-paging .slider-active:before,
+		.slider-control-paging .slider-active:hover:before,
+		.slider-direction-nav a:hover {
 			background-color: ' . $accent_color . ';
-		}
-
-		@media screen and (min-width: 782px) {
-			.primary-navigation ul ul,
-			.primary-navigation li:hover > a {
-				background-color: ' . $accent_color . ';
-			}
 		}
 
 		::-moz-selection {
@@ -151,7 +199,23 @@ function twentyfourteen_customizer_styles() {
 			border-color: ' .  $accent_color . ';
 		}
 
-		/* Generated variant of custom accent color: slightly lighter. */
+		@media screen and (min-width: 782px) {
+			.primary-navigation li:hover > a,
+			.primary-navigation li.focus > a,
+			.primary-navigation ul ul {
+				background-color: ' . $accent_color . ';
+			}
+		}
+
+		@media screen and (min-width: 1008px) {
+			.secondary-navigation li:hover > a,
+			.secondary-navigation li.focus > a,
+			.secondary-navigation ul ul {
+				background-color: ' . $accent_color . ';
+			}
+		}
+
+		/* Generated "mid" variant of custom accent color. */
 		button:hover,
 		button:focus,
 		.contributor-posts-link:hover,
@@ -164,48 +228,95 @@ function twentyfourteen_customizer_styles() {
 		.search-toggle:hover,
 		.search-toggle.active,
 		.search-box,
-		.primary-navigation ul ul a:hover,
-		.widget_calendar tbody a:hover {
-			background-color: ' . $accent_lighter . ';
+		.entry-meta .tag-links a:hover,
+		.widget input[type="button"]:hover,
+		.widget input[type="button"]:focus,
+		.widget input[type="reset"]:hover,
+		.widget input[type="reset"]:focus,
+		.widget input[type="submit"]:hover,
+		.widget input[type="submit"]:focus,
+		.widget_calendar tbody a:hover,
+		.content-sidebar .widget input[type="button"]:hover,
+		.content-sidebar .widget input[type="button"]:focus,
+		.content-sidebar .widget input[type="reset"]:hover,
+		.content-sidebar .widget input[type="reset"]:focus,
+		.content-sidebar .widget input[type="submit"]:hover,
+		.content-sidebar .widget input[type="submit"]:focus,
+		.slider-control-paging a:hover:before {
+			background-color: ' . $accent_mid . ';
 		}
 
-		/* Generated variant of custom accent color: much lighter. */
-		button:active,
-		.contributor-posts-link:active,
-		input[type="button"]:active,
-		input[type="reset"]:active,
-		input[type="submit"]:active,
-		.page-links a:hover {
-			background-color: ' . $accent_much_lighter . ';
-		}
-
-		a:hover,
-		a:focus,
 		a:active,
-		.site-navigation .current_page_item > a,
-		.site-navigation .current_page_ancestor > a,
-		.site-navigation .current-menu-item > a,
-		.site-navigation .current-menu-ancestor > a,
-		.secondary-navigation a:hover,
+		a:hover,
+		.site-navigation a:hover,
 		.entry-title a:hover,
+		.entry-meta a:hover,
 		.cat-links a:hover,
+		.entry-content .edit-link a:hover,
+		.page-links a:hover,
 		.post-navigation a:hover,
 		.image-navigation a:hover,
 		.comment-author a:hover,
 		.comment-list .pingback a:hover,
 		.comment-list .trackback a:hover,
 		.comment-metadata a:hover,
-		.footer-sidebar a:hover,
-		.primary-sidebar a:hover,
-		.content-sidebar .widget_twentyfourteen_ephemera .post-format-archive-link:hover,
+		.comment-reply-title small a:hover,
+		.widget a:hover,
+		.widget-title a:hover,
+		.widget_twentyfourteen_ephemera .entry-meta a:hover,
+		.content-sidebar .widget a:hover,
+		.content-sidebar .widget .widget-title a:hover,
+		.content-sidebar .widget_twentyfourteen_ephemera .entry-meta a:hover,
+		.site-info a:hover,
 		.featured-content a:hover {
-			color: ' . $accent_much_lighter . ';
+			color: ' . $accent_mid . ';
 		}
 
 		.page-links a:hover,
 		.paging-navigation a:hover {
-			border-color: ' . $accent_much_lighter . ';
+			border-color: ' . $accent_mid . ';
+		}
+
+		.tag-links a:hover:before {
+			border-right-color: ' . $accent_mid . ';
+		}
+
+		@media screen and (min-width: 782px) {
+			.primary-navigation ul ul a:hover,
+			.primary-navigation ul ul li.focus > a {
+				background-color: ' . $accent_mid . ';
+			}
+		}
+
+		@media screen and (min-width: 1008px) {
+			.secondary-navigation ul ul a:hover,
+			.secondary-navigation ul ul li.focus > a {
+				background-color: ' . $accent_mid . ';
+			}
+		}
+
+		/* Generated "light" variant of custom accent color. */
+		button:active,
+		.contributor-posts-link:active,
+		input[type="button"]:active,
+		input[type="reset"]:active,
+		input[type="submit"]:active,
+		.widget input[type="button"]:active,
+		.widget input[type="reset"]:active,
+		.widget input[type="submit"]:active,
+		.content-sidebar .widget input[type="button"]:active,
+		.content-sidebar .widget input[type="reset"]:active,
+		.content-sidebar .widget input[type="submit"]:active {
+			background-color: ' . $accent_light . ';
+		}
+
+		.site-navigation .current_page_item > a,
+		.site-navigation .current_page_ancestor > a,
+		.site-navigation .current-menu-item > a,
+		.site-navigation .current-menu-ancestor > a {
+			color: ' . $accent_light . ';
 		}';
+
 
 	wp_add_inline_style( 'twentyfourteen-style', $css );
 }

@@ -59,18 +59,15 @@ function twentyfourteen_setup() {
 	load_theme_textdomain( 'twentyfourteen', get_template_directory() . '/languages' );
 
 	// This theme styles the visual editor to resemble the theme style.
-	add_editor_style( array( 'editor-style.css', twentyfourteen_font_url() ) );
+	add_editor_style( array( 'css/editor-style.css', twentyfourteen_font_url() ) );
 
 	// Add RSS feed links to <head> for posts and comments.
 	add_theme_support( 'automatic-feed-links' );
 
-	// Enable support for Post Thumbnails.
+	// Enable support for Post Thumbnails, and declare two sizes.
 	add_theme_support( 'post-thumbnails' );
-
-	// Add several sizes for Post Thumbnails.
-	add_image_size( 'featured-thumbnail-large', 672, 0 );
-	add_image_size( 'featured-thumbnail-featured', 672, 372, true );
-	add_image_size( 'featured-thumbnail-formatted', 306, 0 );
+	add_image_size( 'post-thumbnail-full-width', 1038, 576, true );
+	add_image_size( 'post-thumbnail', 672, 372, true );
 
 	// This theme uses wp_nav_menu() in two locations.
 	register_nav_menus( array(
@@ -91,7 +88,7 @@ function twentyfourteen_setup() {
 	 * See http://codex.wordpress.org/Post_Formats
 	 */
 	add_theme_support( 'post-formats', array(
-		'aside', 'image', 'video', 'quote', 'link', 'gallery',
+		'aside', 'image', 'video', 'audio', 'quote', 'link', 'gallery',
 	) );
 
 	/*
@@ -207,7 +204,7 @@ function twentyfourteen_font_url() {
 	 * by Lato, translate this to 'off'. Do not translate into your own language.
 	 */
 	if ( 'off' !== _x( 'on', 'Lato font: on or off', 'twentyfourteen' ) )
-		$font_url = add_query_arg( 'family', urlencode( 'Lato:100,300,400,700,900,100italic,300italic,400italic,700italic,900italic' ), "//fonts.googleapis.com/css" );
+		$font_url = add_query_arg( 'family', urlencode( 'Lato:300,400,700,900,300italic,400italic,700italic,900italic' ), "//fonts.googleapis.com/css" );
 
 	return $font_url;
 }
@@ -220,15 +217,18 @@ function twentyfourteen_font_url() {
  * @return void
  */
 function twentyfourteen_scripts() {
-
 	// Add Lato font, used in the main stylesheet.
-	wp_enqueue_style( 'twentyfourteen-lato' );
+	wp_enqueue_style( 'twentyfourteen-lato', twentyfourteen_font_url(), array(), null );
 
 	// Add Genericons font, used in the main stylesheet.
-	wp_enqueue_style( 'genericons', get_template_directory_uri() . '/fonts/genericons.css', array(), '3.0' );
+	wp_enqueue_style( 'genericons', get_template_directory_uri() . '/genericons/genericons.css', array(), '3.0.2' );
 
-	// Loads our main stylesheet.
+	// Load our main stylesheet.
 	wp_enqueue_style( 'twentyfourteen-style', get_stylesheet_uri() );
+
+	// Load the Internet Explorer specific stylesheet.
+	wp_enqueue_style( 'twentyfourteen-ie', get_template_directory_uri() . '/css/ie.css', array( 'twentyfourteen-style' ), '20131110' );
+	wp_style_add_data( 'twentyfourteen-ie', 'conditional', 'lt IE 9' );
 
 	if ( is_singular() && comments_open() && get_option( 'thread_comments' ) )
 		wp_enqueue_script( 'comment-reply' );
@@ -239,10 +239,15 @@ function twentyfourteen_scripts() {
 	if ( is_active_sidebar( 'sidebar-3' ) )
 		wp_enqueue_script( 'jquery-masonry' );
 
-	wp_enqueue_script( 'twentyfourteen-script', get_template_directory_uri() . '/js/functions.js', array( 'jquery' ), '20131011', true );
+	if ( is_front_page() && 'slider' == get_theme_mod( 'featured_content_layout' ) ) {
+		wp_enqueue_script( 'twentyfourteen-slider', get_template_directory_uri() . '/js/slider.js', array( 'jquery' ), '20131109', true );
+		wp_localize_script( 'twentyfourteen-slider', 'featuredSliderDefaults', array(
+			'prevText' => __( 'Previous', 'twentyfourteen' ),
+			'nextText' => __( 'Next', 'twentyfourteen' )
+		) );
+	}
 
-	// Add Lato font used in the main stylesheet.
-	wp_enqueue_style( 'twentyfourteen-lato', twentyfourteen_font_url(), array(), null );
+	wp_enqueue_script( 'twentyfourteen-script', get_template_directory_uri() . '/js/functions.js', array( 'jquery' ), '20131102', true );
 }
 add_action( 'wp_enqueue_scripts', 'twentyfourteen_scripts' );
 
@@ -337,7 +342,7 @@ function twentyfourteen_list_authors() {
 	?>
 
 	<div class="contributor">
-		<div class="contributor-info clear">
+		<div class="contributor-info">
 			<div class="contributor-avatar"><?php echo get_avatar( $contributor_id, 132 ); ?></div>
 			<div class="contributor-summary">
 				<h2 class="contributor-name"><?php echo get_the_author_meta( 'display_name', $contributor_id ); ?></h2>
@@ -361,9 +366,12 @@ endif;
  *
  * Adds body classes to denote:
  * 1. Single or multiple authors.
- * 2. Index views.
- * 3. Full-width content layout.
- * 4. Presence of footer widgets.
+ * 2. Presense of header image.
+ * 3. Index views.
+ * 4. Full-width content layout.
+ * 5. Presence of footer widgets.
+ * 6. Single views.
+ * 7. Featured content layout.
  *
  * @since Twenty Fourteen 1.0
  *
@@ -383,13 +391,21 @@ function twentyfourteen_body_classes( $classes ) {
 		$classes[] = 'list-view';
 
 	if ( ( ! is_active_sidebar( 'sidebar-2' ) )
-		|| is_page_template( 'full-width-page.php' )
-		|| is_page_template( 'contributor-page.php' )
+		|| is_page_template( 'page-templates/full-width.php' )
+		|| is_page_template( 'page-templates/contributors.php' )
 		|| is_attachment() )
 		$classes[] = 'full-width';
 
 	if ( is_active_sidebar( 'sidebar-3' ) )
 		$classes[] = 'footer-widgets';
+
+	if ( is_singular() )
+		$classes[] = 'singular';
+
+	if ( is_front_page() && 'slider' == get_theme_mod( 'featured_content_layout' ) )
+		$classes[] = 'slider';
+	elseif ( is_front_page() )
+		$classes[] = 'grid';
 
 	return $classes;
 }
@@ -399,7 +415,7 @@ add_filter( 'body_class', 'twentyfourteen_body_classes' );
  * Extend the default WordPress post classes.
  *
  * Adds a post class to denote:
- * Non-password protected page with a featured image.
+ * Non-password protected page with a post thumbnail.
  *
  * @since Twenty Fourteen 1.0
  *
@@ -408,7 +424,9 @@ add_filter( 'body_class', 'twentyfourteen_body_classes' );
  */
 function twentyfourteen_post_classes( $classes ) {
 	if ( ! post_password_required() && has_post_thumbnail() )
-		$classes[] = 'has-featured-image';
+		$classes[] = 'has-post-thumbnail';
+	else
+		$classes[] = 'no-post-thumbnail';
 
 	return $classes;
 }

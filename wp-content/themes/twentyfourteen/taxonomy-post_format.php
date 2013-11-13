@@ -15,6 +15,7 @@
 
 get_header(); ?>
 
+<div id="main-content" class="main-content">
 	<section id="primary" class="content-area">
 		<div id="content" class="site-content" role="main">
 
@@ -27,10 +28,13 @@ get_header(); ?>
 							_e( 'Asides', 'twentyfourteen' );
 
 						elseif ( is_tax( 'post_format', 'post-format-image' ) ) :
-							_e( 'Images', 'twentyfourteen');
+							_e( 'Images', 'twentyfourteen' );
 
 						elseif ( is_tax( 'post_format', 'post-format-video' ) ) :
 							_e( 'Videos', 'twentyfourteen' );
+
+						elseif ( is_tax( 'post_format', 'post-format-audio' ) ) :
+							_e( 'Audio', 'twentyfourteen' );
 
 						elseif ( is_tax( 'post_format', 'post-format-quote' ) ) :
 							_e( 'Quotes', 'twentyfourteen' );
@@ -64,8 +68,9 @@ get_header(); ?>
 			?>
 		</div><!-- #content -->
 	</section><!-- #primary -->
+	<?php get_sidebar( 'content' ); ?>
+</div><!-- #main-content -->
 
 <?php
-get_sidebar( 'content' );
 get_sidebar();
 get_footer();

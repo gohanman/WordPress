@@ -146,7 +146,7 @@ function core_upgrade_preamble() {
 		echo '<h3>';
 		_e('You have the latest version of WordPress.');
 
-		if ( wp_http_supports( 'ssl' ) ) {
+		if ( wp_http_supports( array( 'ssl' ) ) ) {
 			require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
 			$upgrader = new WP_Automatic_Updater;
 			$future_minor_update = (object) array(
@@ -446,10 +446,6 @@ function do_undismiss_core_update() {
 	undismiss_core_update( $version, $locale );
 	wp_redirect( wp_nonce_url('update-core.php?action=upgrade-core', 'upgrade-core') );
 	exit;
-}
-
-function no_update_actions($actions) {
-	return '';
 }
 
 $action = isset($_GET['action']) ? $_GET['action'] : 'upgrade-core';

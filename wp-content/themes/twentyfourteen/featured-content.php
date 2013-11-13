@@ -2,8 +2,6 @@
 /**
  * The template for displaying featured content
  *
- * @todo: Add support for featured content.
- *
  * @package WordPress
  * @subpackage Twenty_Fourteen
  * @since Twenty Fourteen 1.0
@@ -11,7 +9,7 @@
 ?>
 
 <div id="featured-content" class="featured-content">
-
+	<div class="featured-content-inner">
 	<?php
 		do_action( 'twentyfourteen_featured_posts_before' );
 
@@ -26,5 +24,5 @@
 
 		wp_reset_postdata();
 	?>
-
+	</div><!-- .featured-content-inner -->
 </div><!-- #featured-content .featured-content -->

@@ -30,8 +30,8 @@ if ( force_ssl_admin() && ! is_ssl() ) {
  * @param string $wp_error Optional. The error to pass. Default empty.
  * @param WP_Error $wp_error Optional. WordPress Error Object
  */
-function login_header($title = 'Log In', $message = '', $wp_error = '') {
-	global $error, $interim_login, $current_site, $action;
+function login_header( $title = 'Log In', $message = '', $wp_error = '' ) {
+	global $error, $interim_login, $action;
 
 	// Don't index any of these forms
 	add_action( 'login_head', 'wp_no_robots' );
@@ -90,7 +90,7 @@ function login_header($title = 'Log In', $message = '', $wp_error = '') {
 
 	if ( is_multisite() ) {
 		$login_header_url   = network_home_url();
-		$login_header_title = $current_site->site_name;
+		$login_header_title = get_current_site()->site_name;
 	} else {
 		$login_header_url   = __( 'http://wordpress.org/' );
 		$login_header_title = __( 'Powered by WordPress' );
@@ -262,7 +262,7 @@ function wp_login_viewport_meta() {
  * @return bool|WP_Error True: when finish. WP_Error on error
  */
 function retrieve_password() {
-	global $wpdb, $current_site, $wp_hasher;
+	global $wpdb, $wp_hasher;
 
 	$errors = new WP_Error();
 
@@ -299,8 +299,8 @@ function retrieve_password() {
 	/**
 	 * Fires before a new password is retrieved.
 	 *
-	 * @since 1.5.2
-	 * @deprecated 1.5.2 Misspelled. Use 'retrieve_password' hook instead.
+	 * @since 1.5.0
+	 * @deprecated 1.5.1 Misspelled. Use 'retrieve_password' hook instead.
 	 *
 	 * @param string $user_login The user login name.
 	 */
@@ -308,7 +308,7 @@ function retrieve_password() {
 	/**
 	 * Fires before a new password is retrieved.
 	 *
-	 * @since 1.5.2
+	 * @since 1.5.1
 	 *
 	 * @param string $user_login The user login name.
 	 */
@@ -508,7 +508,7 @@ case 'retrievepassword' :
 	/**
 	 * Fires before the lost password form.
 	 *
-	 * @since 1.5.2
+	 * @since 1.5.1
 	 */
 	do_action( 'lost_password' );
 
@@ -542,7 +542,7 @@ if ( get_option( 'users_can_register' ) ) :
 	/**
 	 * Filter the registration URL below the login form.
 	 *
-	 * @since 1.5.2
+	 * @since 1.5.0
 	 *
 	 * @param string $registration_url Registration URL.
 	 */

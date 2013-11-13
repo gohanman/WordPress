@@ -589,6 +589,7 @@ $_new_bundled_files = array(
 	'themes/twentyeleven/'   => '3.2',
 	'themes/twentytwelve/'   => '3.5',
 	'themes/twentythirteen/' => '3.6',
+	'themes/twentyfourteen/' => '3.8',
 );
 
 /**
@@ -697,6 +698,9 @@ function update_core($from, $to) {
 
 	// Check to see which files don't really need updating - only available for 3.7 and higher
 	if ( function_exists( 'get_core_checksums' ) ) {
+		// Find the local version of the working directory
+		$working_dir_local = WP_CONTENT_DIR . '/upgrade/' . basename( $from ) . $distro;
+
 		$checksums = get_core_checksums( $wp_version, isset( $wp_local_package ) ? $wp_local_package : 'en_US' );
 		if ( is_array( $checksums ) && isset( $checksums[ $wp_version ] ) )
 			$checksums = $checksums[ $wp_version ]; // Compat code for 3.7-beta2
@@ -705,6 +709,8 @@ function update_core($from, $to) {
 				if ( 'wp-content' == substr( $file, 0, 10 ) )
 					continue;
 				if ( ! file_exists( ABSPATH . $file ) )
+					continue;
+				if ( ! file_exists( $working_dir_local . $file ) )
 					continue;
 				if ( md5_file( ABSPATH . $file ) === $checksum )
 					$skip[] = $file;
@@ -752,9 +758,10 @@ function update_core($from, $to) {
 	$failed = array();
 	if ( isset( $checksums ) && is_array( $checksums ) ) {
 		foreach ( $checksums as $file => $checksum ) {
-			if ( 0 === strpos( $file, 'wp-content' ) )
+			if ( 'wp-content' == substr( $file, 0, 10 ) )
 				continue;
-
+			if ( ! file_exists( $working_dir_local . $file ) )
+				continue;
 			if ( file_exists( ABSPATH . $file ) && md5_file( ABSPATH . $file ) == $checksum )
 				$skip[] = $file;
 			else
@@ -765,8 +772,6 @@ function update_core($from, $to) {
 	// Some files didn't copy properly
 	if ( ! empty( $failed ) ) {
 		$total_size = 0;
-		// Find the local version of the working directory
-		$working_dir_local = WP_CONTENT_DIR . '/upgrade/' . basename( $from ) . $distro;
 		foreach ( $failed as $file ) {
 			if ( file_exists( $working_dir_local . $file ) )
 				$total_size += filesize( $working_dir_local . $file );

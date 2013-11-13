@@ -266,32 +266,63 @@ function get_theme_feature_list( $api = true ) {
  *
  * @since 2.8.0
  *
- * @param string $action
- * @param array|object $args Optional. Arguments to serialize for the Theme Info API.
+ * @param string       $action The requested action. Likely values are 'theme_information',
+ *                             'feature_list', or 'query_themes'.
+ * @param array|object $args   Optional. Arguments to serialize for the Theme Info API.
  * @return mixed
  */
-function themes_api($action, $args = null) {
+function themes_api( $action, $args = null ) {
 
 	if ( is_array($args) )
 		$args = (object)$args;
 
 	if ( !isset($args->per_page) )
 		$args->per_page = 24;
-
-	$args = apply_filters('themes_api_args', $args, $action); //NOTE: Ensure that an object is returned via this filter.
-	$res = apply_filters('themes_api', false, $action, $args); //NOTE: Allows a theme to completely override the builtin WordPress.org API.
+	/**
+	 * Filter arguments used to query for installer pages from the WordPress.org Themes API.
+	 *
+	 * Important: An object MUST be returned to this filter.
+	 * 
+	 * @since 2.8.0
+	 * 
+	 * @param object $args   Arguments used to query for installer pages from the WordPress.org Themes API.
+	 * @param string $action Requested action. Likely values are 'theme_information',
+	 *                       'feature_list', or 'query_themes'.
+ 	*/
+	$args = apply_filters( 'themes_api_args', $args, $action );
+	
+	/**
+	 * Filter whether to override the WordPress.org Themes API.
+	 *
+	 * Returning a value of true to this filter allows a theme to completely
+	 * override the built-in WordPress.org API.
+	 * 
+	 * @since 2.8.0
+	 *
+	 * @param bool   $bool   Whether to override the WordPress.org Themes API. Default false.
+	 * @param string $action Requested action. Likely values are 'theme_information',
+	 *                       'feature_list', or 'query_themes'.
+	 * @param object $args   Arguments used to query for installer pages from the Themes API.
+	 */
+	$res = apply_filters( 'themes_api', false, $action, $args );
 
 	if ( ! $res ) {
-		$url = 'http://api.wordpress.org/themes/info/1.0/';
-		if ( wp_http_supports( array( 'ssl' ) ) )
+		$url = $http_url = 'http://api.wordpress.org/themes/info/1.0/';
+		if ( $ssl = wp_http_supports( array( 'ssl' ) ) )
 			$url = set_url_scheme( $url, 'https' );
 
-		$request = wp_remote_post( $url, array(
+		$args = array(
 			'body' => array(
 				'action' => $action,
 				'request' => serialize( $args )
 			)
-		) );
+		);
+		$request = wp_remote_post( $url, $args );
+
+		if ( $ssl && is_wp_error( $request ) ) {
+			trigger_error( __( 'An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href="http://wordpress.org/support/">support forums</a>.' ) . ' ' . '(WordPress could not establish a secure connection to WordPress.org. Please contact your server administrator.)', headers_sent() || WP_DEBUG ? E_USER_WARNING : E_USER_NOTICE );
+			$request = wp_remote_post( $http_url, $args );
+		}
 
 		if ( is_wp_error($request) ) {
 			$res = new WP_Error('themes_api_failed', __( 'An unexpected error occurred. Something may be wrong with WordPress.org or this server&#8217;s configuration. If you continue to have problems, please try the <a href="http://wordpress.org/support/">support forums</a>.' ), $request->get_error_message() );
@@ -302,5 +333,72 @@ function themes_api($action, $args = null) {
 		}
 	}
 
-	return apply_filters('themes_api_result', $res, $action, $args);
+	/**
+	 * Filter the returned WordPress.org Themes API response.
+	 *
+	 * @since 2.8.0
+	 *
+	 * @param array|object $res    WordPress.org Themes API response.
+	 * @param string       $action Requested action. Likely values are 'theme_information',
+	 *                             'feature_list', or 'query_themes'.
+	 * @param object       $args   Arguments used to query for installer pages from the WordPress.org Themes API.
+	 */
+	return apply_filters( 'themes_api_result', $res, $action, $args );
+}
+
+/**
+ * Prepare themes for JavaScript.
+ *
+ * @since 3.8.0
+ *
+ * @param array $themes Optional. Array of WP_Theme objects to prepare.
+ *                      Defaults to all allowed themes.
+ *
+ * @return array An associative array of theme data.
+ */
+function wp_prepare_themes_for_js( $themes = null ) {
+	if ( null === $themes ) {
+		$themes = wp_get_themes( array( 'allowed' => true ) );
+	}
+
+	$prepared_themes = array();
+	$current_theme = get_stylesheet();
+
+	$updates = array();
+	if ( current_user_can( 'update_themes' ) ) {
+		$updates = get_site_transient( 'update_themes' );
+		$updates = $updates->response;
+	}
+
+	foreach( $themes as $slug => $theme ) {
+		$parent = false;
+		if ( $theme->parent() ) {
+			$parent = $theme->parent()->display( 'Name' );
+		}
+
+		$encoded_slug = urlencode( $slug );
+
+		$prepared_themes[] = array(
+			'id'           => $slug,
+			'name'         => $theme->display( 'Name' ),
+			'screenshot'   => array( $theme->get_screenshot() ), // @todo multiple
+			'description'  => $theme->display( 'Description' ),
+			'author'       => $theme->get( 'Author' ),
+			'authorURI'    => $theme->get( 'AuthorURI' ),
+			'version'      => $theme->get( 'Version' ),
+			'tags'         => $theme->get( 'Tags' ),
+			'parent'       => $parent,
+			'active'       => $slug === $current_theme,
+			'hasUpdate'    => isset( $updates[ $slug ] ),
+			'update'       => 'New version available', // @todo complete this
+			'actions'      => array(
+				'activate' => wp_nonce_url( 'themes.php?action=activate&amp;stylesheet=' . $encoded_slug, 'switch-theme_' . $slug ),
+				'customize'=> admin_url( 'customize.php?theme=' . $encoded_slug ),
+				'delete'   => wp_nonce_url( 'themes.php?action=delete&amp;stylesheet=' . $encoded_slug, 'delete-theme_' . $slug ),
+			),
+		);
+	}
+	// var_dump( $prepared_themes );
+
+	return $prepared_themes;
 }
