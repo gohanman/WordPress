@@ -506,7 +506,7 @@ if ( !function_exists('wp_validate_auth_cookie') ) :
  * Makes sure the cookie is not expired. Verifies the hash in cookie is what is
  * should be and compares the two.
  *
- * @since 2.5
+ * @since 2.5.0
  *
  * @param string $cookie Optional. If used, will validate contents instead of cookie's
  * @param string $scheme Optional. The cookie scheme to use: auth, secure_auth, or logged_in
@@ -561,7 +561,8 @@ if ( !function_exists('wp_generate_auth_cookie') ) :
 /**
  * Generate authentication cookie contents.
  *
- * @since 2.5
+ * @since 2.5.0
+ *
  * @uses apply_filters() Calls 'auth_cookie' hook on $cookie contents, User ID
  *		and expiration of cookie.
  *
@@ -588,7 +589,7 @@ if ( !function_exists('wp_parse_auth_cookie') ) :
 /**
  * Parse a cookie into its components
  *
- * @since 2.7
+ * @since 2.7.0
  *
  * @param string $cookie
  * @param string $scheme Optional. The cookie scheme to use: auth, secure_auth, or logged_in
@@ -639,7 +640,7 @@ if ( !function_exists('wp_set_auth_cookie') ) :
  * default the cookie is kept without remembering is two days. When $remember is
  * set, the cookies will be kept for 14 days or two weeks.
  *
- * @since 2.5
+ * @since 2.5.0
  *
  * @param int $user_id User ID
  * @param bool $remember Whether to remember the user
@@ -687,7 +688,7 @@ if ( !function_exists('wp_clear_auth_cookie') ) :
 /**
  * Removes all of the cookies associated with authentication.
  *
- * @since 2.5
+ * @since 2.5.0
  */
 function wp_clear_auth_cookie() {
 	do_action('clear_auth_cookie');
@@ -735,7 +736,7 @@ if ( !function_exists('auth_redirect') ) :
 /**
  * Checks if a user is logged in, if not it redirects them to the login page.
  *
- * @since 1.5
+ * @since 1.5.0
  */
 function auth_redirect() {
 	// Checks if a user is logged in, if not redirects them to the login page
@@ -903,7 +904,7 @@ if ( !function_exists('wp_sanitize_redirect') ) :
 /**
  * Sanitizes a URL for use in a redirect.
  *
- * @since 2.3
+ * @since 2.3.0
  *
  * @return string redirect-sanitized URL
  **/
@@ -930,7 +931,8 @@ if ( !function_exists('wp_safe_redirect') ) :
  * instead. This prevents malicious redirects which redirect to another host,
  * but only used in a few places.
  *
- * @since 2.3
+ * @since 2.3.0
+ *
  * @uses wp_validate_redirect() To validate the redirect is to an allowed host.
  *
  * @return void Does not return anything
@@ -1000,15 +1002,19 @@ endif;
 
 if ( ! function_exists('wp_notify_postauthor') ) :
 /**
- * Notify an author of a comment/trackback/pingback to one of their posts.
+ * Notify an author (and/or others) of a comment/trackback/pingback on a post.
  *
  * @since 1.0.0
  *
  * @param int $comment_id Comment ID
- * @param string $comment_type Optional. The comment type either 'comment' (default), 'trackback', or 'pingback'
- * @return bool False if user email does not exist. True on completion.
+ * @param string $deprecated Not used
+ * @return bool True on completion. False if no email addresses were specified.
  */
-function wp_notify_postauthor( $comment_id, $comment_type = '' ) {
+function wp_notify_postauthor( $comment_id, $deprecated = null ) {
+	if ( null !== $deprecated ) {
+		_deprecated_argument( __FUNCTION__, '3.8' );
+	}
+
 	$comment = get_comment( $comment_id );
 	if ( empty( $comment ) )
 		return false;
@@ -1016,21 +1022,65 @@ function wp_notify_postauthor( $comment_id, $comment_type = '' ) {
 	$post    = get_post( $comment->comment_post_ID );
 	$author  = get_userdata( $post->post_author );
 
-	// The comment was left by the author
-	if ( $comment->user_id == $post->post_author )
-		return false;
+	// Who to notify? By default, just the post author, but others can be added.
+	$emails = array( $author->user_email );
 
-	// The author moderated a comment on his own post
-	if ( $post->post_author == get_current_user_id() )
+	/**
+	 * Filter the list of emails to receive a comment notification.
+	 *
+	 * Normally just post authors are notified of emails.
+	 * This filter lets you add others.
+	 *
+	 * @since 3.7.0
+	 *
+	 * @param array $emails     Array of email addresses to receive a comment notification.
+	 * @param int   $comment_id The comment ID.
+	 */
+	$emails = apply_filters( 'comment_notification_recipients', $emails, $comment_id );
+	$emails = array_filter( $emails );
+
+	// If there are no addresses to send the comment to, bail.
+	if ( ! count( $emails ) ) {
 		return false;
+	}
+
+	// Facilitate unsetting below without knowing the keys.
+	$emails = array_flip( $emails );
+
+	/**
+	 * Filter whether to notify comment authors of their comments on their own posts.
+	 *
+	 * By default, comment authors don't get notified of their comments
+	 * on their own post. This lets you override that.
+	 *
+	 * @since 3.8.0
+	 *
+	 * @param bool $notify     Whether to notify the post author of their own comment. Default false.
+	 * @param int  $comment_id The comment ID.
+	 */
+	$notify_author = apply_filters( 'comment_notification_notify_author', false, $comment_id );
+
+	// The comment was left by the author
+	if ( ! $notify_author && $comment->user_id == $post->post_author ) {
+		unset( $emails[ $author->user_email ] );
+	}
+
+	// The author moderated a comment on their own post
+	if ( ! $notify_author && $post->post_author == get_current_user_id() ) {
+		unset( $emails[ $author->user_email ] );
+	}
 
 	// The post author is no longer a member of the blog
-	if ( ! user_can( $post->post_author, 'read_post', $post->ID ) )
-		return false;
+	if ( ! $notify_author && ! user_can( $post->post_author, 'read_post', $post->ID ) ) {
+		unset( $emails[ $author->user_email ] );
+	}
 
-	// If there's no email to send the comment to
-	if ( '' == $author->user_email )
+	// If there's no email to send the comment to, bail, otherwise flip array back around for use below
+	if ( ! count( $emails ) ) {
 		return false;
+	} else {
+		$emails = array_flip( $emails );
+	}
 
 	$comment_author_domain = @gethostbyaddr($comment->comment_author_IP);
 
@@ -1038,9 +1088,7 @@ function wp_notify_postauthor( $comment_id, $comment_type = '' ) {
 	// we want to reverse this for the plain text arena of emails.
 	$blogname = wp_specialchars_decode(get_option('blogname'), ENT_QUOTES);
 
-	if ( empty( $comment_type ) ) $comment_type = 'comment';
-
-	switch ( $comment_type ) {
+	switch ( $comment->comment_type ) {
 		case 'trackback':
 			$notify_message  = sprintf( __( 'New trackback on your post "%s"' ), $post->post_title ) . "\r\n";
 			/* translators: 1: website name, 2: author IP, 3: author domain */
@@ -1103,9 +1151,6 @@ function wp_notify_postauthor( $comment_id, $comment_type = '' ) {
 	if ( isset($reply_to) )
 		$message_headers .= $reply_to . "\n";
 
-	$emails = array( $author->user_email );
-
-	$emails          = apply_filters( 'comment_notification_recipients', $emails,          $comment_id );
 	$notify_message  = apply_filters( 'comment_notification_text',       $notify_message,  $comment_id );
 	$subject         = apply_filters( 'comment_notification_subject',    $subject,         $comment_id );
 	$message_headers = apply_filters( 'comment_notification_headers',    $message_headers, $comment_id );
@@ -1122,7 +1167,8 @@ if ( !function_exists('wp_notify_moderator') ) :
 /**
  * Notifies the moderator of the blog about a new comment that is awaiting approval.
  *
- * @since 1.0
+ * @since 1.0.0
+ *
  * @uses $wpdb
  *
  * @param int $comment_id Comment ID
@@ -1208,7 +1254,7 @@ if ( !function_exists('wp_password_change_notification') ) :
 /**
  * Notify the blog admin of a user changing password, normally via email.
  *
- * @since 2.7
+ * @since 2.7.0
  *
  * @param object $user User Object
  */
@@ -1229,7 +1275,7 @@ if ( !function_exists('wp_new_user_notification') ) :
 /**
  * Notify the blog admin of a new user, normally via email.
  *
- * @since 2.0
+ * @since 2.0.0
  *
  * @param int $user_id User ID
  * @param string $plaintext_pass Optional. The user's plaintext password
@@ -1266,7 +1312,7 @@ if ( !function_exists('wp_nonce_tick') ) :
  * A nonce has a lifespan of two ticks. Nonces in their second tick may be
  * updated, e.g. by autosave.
  *
- * @since 2.5
+ * @since 2.5.0
  *
  * @return int
  */
@@ -1358,7 +1404,7 @@ if ( !function_exists('wp_salt') ) :
  * Salting passwords helps against tools which has stored hashed values of
  * common dictionary strings. The added values makes it harder to crack.
  *
- * @since 2.5
+ * @since 2.5.0
  *
  * @link https://api.wordpress.org/secret-key/1.1/salt/ Create secrets for wp-config.php
  *
@@ -1442,7 +1488,8 @@ if ( !function_exists('wp_hash_password') ) :
  * For integration with other applications, this function can be overwritten to
  * instead use the other package password checking algorithm.
  *
- * @since 2.5
+ * @since 2.5.0
+ *
  * @global object $wp_hasher PHPass object
  * @uses PasswordHash::HashPassword
  *
@@ -1474,7 +1521,8 @@ if ( !function_exists('wp_check_password') ) :
  * For integration with other applications, this function can be overwritten to
  * instead use the other package password checking algorithm.
  *
- * @since 2.5
+ * @since 2.5.0
+ *
  * @global object $wp_hasher PHPass object used for checking the password
  *	against the $hash + $password
  * @uses PasswordHash::CheckPassword
@@ -1516,7 +1564,7 @@ if ( !function_exists('wp_generate_password') ) :
 /**
  * Generates a random password drawn from the defined set of characters.
  *
- * @since 2.5
+ * @since 2.5.0
  *
  * @param int $length The length of password to generate
  * @param bool $special_chars Whether to include standard special characters. Default true.
@@ -1595,7 +1643,8 @@ if ( !function_exists('wp_set_password') ) :
  * For integration with other applications, this function can be overwritten to
  * instead use the other package password checking algorithm.
  *
- * @since 2.5
+ * @since 2.5.0
+ *
  * @uses $wpdb WordPress database object for queries
  * @uses wp_hash_password() Used to encrypt the user's password before passing to the database
  *
@@ -1616,7 +1665,8 @@ if ( !function_exists( 'get_avatar' ) ) :
 /**
  * Retrieve the avatar for a user who provided a user ID or email address.
  *
- * @since 2.5
+ * @since 2.5.0
+ *
  * @param int|string|object $id_or_email A user ID,  email address, or comment object
  * @param int $size Size of the avatar image
  * @param string $default URL to a default image to use if no avatar is available
@@ -1730,7 +1780,8 @@ if ( !function_exists( 'wp_text_diff' ) ) :
  * 'title_right' : Default is an empty string. Change the HTML to the right of
  *		the title.
  *
- * @since 2.6
+ * @since 2.6.0
+ *
  * @see wp_parse_args() Used to change defaults to user defined settings.
  * @uses Text_Diff
  * @uses WP_Text_Diff_Renderer_Table

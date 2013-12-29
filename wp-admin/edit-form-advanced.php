@@ -359,7 +359,6 @@ require_once( ABSPATH . 'wp-admin/admin-header.php' );
 ?>
 
 <div class="wrap">
-<?php screen_icon(); ?>
 <h2><?php
 echo esc_html( $title );
 if ( isset( $post_new_file ) && current_user_can( $post_type_object->cap->create_posts ) )
@@ -484,6 +483,9 @@ if ( post_type_supports($post_type, 'editor') ) {
 	'dfw' => true,
 	'tabfocus_elements' => 'insert-media-button,save-post',
 	'editor_height' => 360,
+	'tinymce' => array(
+		'resize' => false,
+	),
 ) ); ?>
 <table id="post-status-info" cellspacing="0"><tbody><tr>
 	<td id="wp-word-count"><?php printf( __( 'Word count: %s' ), '<span class="word-count">0</span>' ); ?></td>
@@ -500,6 +502,7 @@ if ( post_type_supports($post_type, 'editor') ) {
 		echo '</span>';
 	} ?>
 	</td>
+	<td id="content-resize-handle" class="hide-if-no-js"><br /></td>
 </tr></tbody></table>
 
 </div>
